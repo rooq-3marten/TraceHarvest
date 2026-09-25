@@ -1,8 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ic_traceharvest_1789851860840"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center Shield Contour -->
+    <path
+        android:fillColor="#E8F5E9"
+        android:strokeColor="#2E7D32"
+        android:strokeWidth="2.5"
+        android:strokeLineJoin="round"
+        android:pathData="M54,26 L76,34 C76,56 66,72 54,80 C42,72 32,56 32,34 Z" />
+    <!-- Inner Leaf / Plant Sprout -->
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M54,42 C54,42 63,44 65,53 C67,61 60,65 54,66 C54,66 54,49 54,42 Z" />
+    <path
+        android:fillColor="#43A047"
+        android:pathData="M54,48 C54,48 45,50 43,59 C41,67 48,71 54,72 C54,72 54,55 54,48 Z" />
+    <!-- Central Stalk -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1B5E20"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M54,40 L54,72" />
+    <!-- Checkmark / Provenance Tick at Bottom -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFB300"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M48,60 L52,64 L60,54" />
+</vector>

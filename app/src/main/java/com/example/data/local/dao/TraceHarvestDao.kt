@@ -33,6 +33,18 @@ interface TraceHarvestDao {
     @Query("DELETE FROM farmers WHERE id = :id")
     suspend fun deleteFarmerById(id: Long)
 
+    @Query("SELECT * FROM farmers WHERE syncStatus = 'pending_sync' ORDER BY registrationTimestamp ASC")
+    suspend fun getPendingSyncFarmers(): List<FarmerEntity>
+
+    @Query("SELECT COUNT(*) FROM farmers WHERE syncStatus = 'pending_sync'")
+    fun getPendingSyncFarmersCount(): Flow<Int>
+
+    @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1, farmerCode = :serverCode, farmerDisplayId = :serverCode WHERE id = :id")
+    suspend fun markFarmerSynced(id: Long, serverCode: String)
+
+    @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1 WHERE id IN (:ids)")
+    suspend fun markFarmersSynced(ids: List<Long>)
+
     // --- Practice Logs ---
     @Query("SELECT * FROM practice_logs ORDER BY dateApplied DESC")
     fun getAllPracticeLogs(): Flow<List<PracticeLogEntity>>
@@ -48,6 +60,18 @@ interface TraceHarvestDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPracticeLogs(logs: List<PracticeLogEntity>)
+
+    @Query("SELECT * FROM practice_logs WHERE syncStatus = 'pending_sync' ORDER BY dateApplied ASC")
+    suspend fun getPendingSyncPracticeLogs(): List<PracticeLogEntity>
+
+    @Query("SELECT COUNT(*) FROM practice_logs WHERE syncStatus = 'pending_sync'")
+    fun getPendingSyncPracticeLogsCount(): Flow<Int>
+
+    @Query("UPDATE practice_logs SET syncStatus = 'synced', isSynced = 1 WHERE id = :id")
+    suspend fun markPracticeLogSynced(id: Long)
+
+    @Query("UPDATE practice_logs SET syncStatus = 'synced', isSynced = 1 WHERE id IN (:ids)")
+    suspend fun markPracticeLogsSynced(ids: List<Long>)
 
     // --- Harvest Batches ---
     @Query("SELECT * FROM harvest_batches ORDER BY harvestDate DESC")

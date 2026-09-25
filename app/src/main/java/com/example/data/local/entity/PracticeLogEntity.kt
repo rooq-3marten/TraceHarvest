@@ -10,15 +10,41 @@ data class PracticeLogEntity(
     val farmerCode: String,
     val farmerName: String,
     val crop: String,
-    val category: String, // "Pesticide Application", "Fertilizer / Soil", "Drying & Aflatoxin Control", "Harvest Preparation"
-    val practiceDetails: String,
-    val productName: String,
-    val activeIngredient: String,
-    val dosage: String,
-    val dateApplied: Long = System.currentTimeMillis(),
-    val preHarvestIntervalDays: Int = 14,
-    val source: String = "Agent Mobile App", // "Agent Mobile App", "USSD (*384*748#)", "SMS Reply"
-    val riskLevel: String = "COMPLIANT", // "COMPLIANT", "CAUTION", "BANNED_MRL_VIOLATION"
+    // Icon-based Practice Types: 🌱 Planting, 💧 Irrigation, 🧪 Pesticide application, 🌿 Fertilizer application, ✂️ Harvest
+    val practiceType: String = "🧪 Pesticide application",
+    val category: String = practiceType,
+    val practiceDetails: String = "",
+    val productName: String = "", // Selected from dropdown of approved products (if pesticide/fertilizer)
+    val activeIngredient: String = "",
+    val dosage: String = "",
+    val quantityUsed: Double = 1.0,
+    val quantityUnit: String = "Litres",
+    val dateApplied: Long = System.currentTimeMillis(), // Defaults to today
+    val preHarvestIntervalDays: Int = 0,
+    val source: String = "Agent Mobile App",
+    val riskLevel: String = "COMPLIANT",
     val riskNotes: String = "",
-    val isSynced: Boolean = true
+    val isSynced: Boolean = false,
+    val farmerLocalId: Long = 0,
+    val farmerDisplayId: String = farmerCode,
+    val nafdacRegNo: String = "",
+    val nafdacApproved: Boolean = true,
+    val gpsCoordinates: String = "",
+    // Auto GPS from phone hardware
+    val liveLatitude: Double = 0.0,
+    val liveLongitude: Double = 0.0,
+    val gpsAccuracyMeters: Float = 0.0f,
+    val gpsFixStatus: String = "GPS_ACQUIRED",
+    // Optional photo of product label (via Android Photo Picker)
+    val verificationPhotoUri: String = "",
+    val photoVerificationType: String = "CONTAINER_LABEL",
+    // Offline-first SQLite status & Backend logging attributes
+    val syncStatus: String = "pending_sync", // "pending_sync", "synced"
+    val agentId: String = "AGENT-NG-042",
+    val serverLoggedTimestamp: Long = System.currentTimeMillis(),
+    val dosageQuantity: Double = quantityUsed,
+    val dosageUnit: String = quantityUnit,
+    val calendarDateApplied: Long = dateApplied,
+    val clientUuid: String = java.util.UUID.randomUUID().toString(),
+    val farmerClientUuid: String = ""
 )

