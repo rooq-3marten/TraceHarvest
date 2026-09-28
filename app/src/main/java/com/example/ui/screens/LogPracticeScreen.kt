@@ -99,6 +99,7 @@ import com.example.data.catalog.NafdacCatalog
 import com.example.data.catalog.NafdacExportCompliance
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.PracticeLogEntity
+import com.example.ui.components.DropdownSectionHeader
 import com.example.ui.theme.ComplianceGreen
 import com.example.ui.theme.HarvestGreenPrimary
 import com.example.ui.theme.ViolationRed
@@ -183,6 +184,7 @@ fun LogPracticeScreen(
 
     var selectedFarmerIndex by remember { mutableStateOf(0) }
     var farmerDropdownExpanded by remember { mutableStateOf(false) }
+    var recentLogsExpanded by remember { mutableStateOf(false) }
 
     val currentFarmer = farmers.getOrElse(selectedFarmerIndex) { farmers.first() }
 
@@ -889,7 +891,7 @@ fun LogPracticeScreen(
                         Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Submit Practice (Stored Offline: pending_sync)",
+                            text = "Submit Practice Record (Offline Queue)",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -898,17 +900,30 @@ fun LogPracticeScreen(
             }
         }
 
-        // Section: Recent Practices Audit Trail
+        // Section: Recent Practices Audit Trail (Closed by default with dropdown arrow)
         item {
-            Text(
-                text = "Recent Seasonal Practice Trail (${recentLogs.size})",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp)
+            DropdownSectionHeader(
+                title = "Recent Practice Trail",
+                count = recentLogs.size,
+                isExpanded = recentLogsExpanded,
+                onToggle = { recentLogsExpanded = !recentLogsExpanded },
+                subtitle = if (recentLogsExpanded) "Tap to collapse" else "Tap to view list",
+                testTag = "recent_practices_dropdown_header"
             )
         }
 
-        items(recentLogs.take(8), key = { it.id }) { log ->
+        if (recentLogsExpanded) {
+            if (recentLogs.isEmpty()) {
+                item {
+                    Text(
+                        text = "No seasonal practices recorded yet.",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            } else {
+                items(recentLogs.take(12), key = { it.id }) { log ->
             val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(log.dateApplied))
 
             Card(
@@ -1000,6 +1015,8 @@ fun LogPracticeScreen(
                 }
             }
         }
+    }
+}
 
         item {
             Spacer(modifier = Modifier.height(80.dp))

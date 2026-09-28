@@ -30,26 +30,30 @@ object SyncManager {
      * Enqueues a periodic CoroutineWorker with [NetworkType.CONNECTED] constraint.
      */
     fun initialize(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+        try {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
 
-        val periodicWorkRequest = PeriodicWorkRequestBuilder<TraceHarvestSyncWorker>(
-            SYNC_INTERVAL_MINUTES, TimeUnit.MINUTES
-        )
-            .setConstraints(constraints)
-            .setBackoffCriteria(
-                BackoffPolicy.EXPONENTIAL,
-                30,
-                TimeUnit.SECONDS
+            val periodicWorkRequest = PeriodicWorkRequestBuilder<TraceHarvestSyncWorker>(
+                SYNC_INTERVAL_MINUTES, TimeUnit.MINUTES
             )
-            .build()
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS
+                )
+                .build()
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            PERIODIC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            periodicWorkRequest
-        )
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                PERIODIC_WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                periodicWorkRequest
+            )
+        } catch (e: Throwable) {
+            android.util.Log.w("SyncManager", "WorkManager background sync registration skipped: ${e.message}")
+        }
     }
 
     /**
@@ -57,27 +61,35 @@ object SyncManager {
      * connectivity is available.
      */
     fun triggerImmediateSync(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+        try {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
 
-        val oneTimeWorkRequest = OneTimeWorkRequestBuilder<TraceHarvestSyncWorker>()
-            .setConstraints(constraints)
-            .build()
+            val oneTimeWorkRequest = OneTimeWorkRequestBuilder<TraceHarvestSyncWorker>()
+                .setConstraints(constraints)
+                .build()
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            ONE_TIME_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
-            oneTimeWorkRequest
-        )
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                ONE_TIME_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                oneTimeWorkRequest
+            )
+        } catch (e: Throwable) {
+            android.util.Log.w("SyncManager", "WorkManager triggerImmediateSync failed: ${e.message}")
+        }
     }
 
     /**
      * Observes the periodic sync WorkInfo to display live background sync status in the UI.
      */
     fun observePeriodicWork(context: Context): Flow<List<WorkInfo>> {
-        return WorkManager.getInstance(context)
-            .getWorkInfosForUniqueWorkLiveData(PERIODIC_WORK_NAME)
-            .asFlow()
+        return try {
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkLiveData(PERIODIC_WORK_NAME)
+                .asFlow()
+        } catch (e: Throwable) {
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        }
     }
 }

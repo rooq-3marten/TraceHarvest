@@ -6,7 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.example.data.local.AppDatabase
-import com.example.data.repository.TraceHarvestRepositoryImpl
+import com.example.data.repository.TraceHarvestRepository
 
 /**
  * Background CoroutineWorker managed by Android WorkManager.
@@ -30,7 +30,7 @@ class TraceHarvestSyncWorker(
 
         return try {
             val database = AppDatabase.getDatabase(applicationContext)
-            val repository = TraceHarvestRepositoryImpl(database.traceHarvestDao())
+            val repository = TraceHarvestRepository(database.traceHarvestDao())
 
             val result = repository.syncAllPending()
 

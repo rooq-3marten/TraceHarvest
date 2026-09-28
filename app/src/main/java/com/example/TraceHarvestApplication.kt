@@ -1,14 +1,21 @@
 package com.example
 
 import android.app.Application
+import android.util.Log
+import androidx.work.Configuration
 import com.example.worker.SyncManager
 
 /**
  * Custom Application class for TraceHarvest Android.
- * Initializes Android WorkManager background sync upon app launch,
- * ensuring automatic CoroutineWorker execution whenever cellular or Wi-Fi data connects.
+ * Implements [Configuration.Provider] for on-demand WorkManager initialization
+ * and starts background sync upon app launch.
  */
-class TraceHarvestApplication : Application() {
+class TraceHarvestApplication : Application(), Configuration.Provider {
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setMinimumLoggingLevel(Log.INFO)
+            .build()
 
     override fun onCreate() {
         super.onCreate()

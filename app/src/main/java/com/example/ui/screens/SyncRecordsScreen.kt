@@ -114,7 +114,7 @@ fun SyncRecordsScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "OFFLINE-FIRST SYNCHRONIZATION ENGINE",
+                                text = "OFFLINE QUEUE & SYNC",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp,
@@ -138,7 +138,7 @@ fun SyncRecordsScreen(
                     }
 
                     Text(
-                        text = if (totalPendingCount > 0) "$totalPendingCount Record(s) Stored Locally" else "All Records Synchronized Upstream",
+                        text = if (totalPendingCount > 0) "$totalPendingCount Record(s) Stored Locally" else "All Records Synchronized",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = if (totalPendingCount > 0) Color.Black else Color.White
@@ -146,9 +146,9 @@ fun SyncRecordsScreen(
 
                     Text(
                         text = if (totalPendingCount > 0) {
-                            "Unsynced farmers ($pendingFarmerCount) and practices ($pendingPracticeCount) are securely preserved in SQLite. Push when online to generate backend Farmer IDs."
+                            "$totalPendingCount local record(s) queued on device ($pendingFarmerCount farmers, $pendingPracticeCount practices). Tap below to sync when online."
                         } else {
-                            "Central backend has verified all farmer enrollments and seasonal practice audits."
+                            "Central registry has verified all farmer enrollments and seasonal practice audits."
                         },
                         fontSize = 11.sp,
                         color = if (totalPendingCount > 0) Color.DarkGray else Color(0xFFC8E6C9),
@@ -172,12 +172,12 @@ fun SyncRecordsScreen(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Dispatching to Backend Ledger...", fontSize = 12.sp)
+                            Text("Syncing records...", fontSize = 12.sp)
                         } else {
                             Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (totalPendingCount > 0) "Sync $totalPendingCount Queued Record(s) to Backend" else "Upstream Ledger in Sync",
+                                text = if (totalPendingCount > 0) "Sync Now ($totalPendingCount Queued)" else "All Records Up-to-Date",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )

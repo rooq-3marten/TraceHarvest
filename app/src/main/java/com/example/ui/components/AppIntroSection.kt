@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudSync
@@ -95,7 +98,7 @@ fun AppIntroBanner(
     onNavigateToSync: () -> Unit = {},
     onOpenFullGuide: () -> Unit = {}
 ) {
-    var isExpanded by remember { mutableStateOf(true) }
+    var isExpanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
@@ -167,7 +170,7 @@ fun AppIntroBanner(
                         )
                     }
                     Icon(
-                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        imageVector = if (isExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
                         contentDescription = if (isExpanded) "Collapse" else "Expand",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
@@ -309,7 +312,7 @@ fun AppIntroBanner(
                             modifier = Modifier.testTag("open_detailed_guide_btn")
                         ) {
                             Icon(
-                                Icons.Default.HelpOutline,
+                                Icons.AutoMirrored.Filled.HelpOutline,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )

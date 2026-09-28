@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.HelpOutline
@@ -72,7 +73,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FarmerEntity
-import com.example.ui.components.AppIntroBanner
+import com.example.ui.components.DropdownSectionHeader
 import com.example.ui.theme.ComplianceGreen
 import com.example.ui.theme.HarvestGreenPrimary
 import com.example.ui.theme.WarningAmber
@@ -183,6 +184,7 @@ fun EnrollFarmerScreen(
     // Offline mode toggle (defaults to true: Offline-First SQLite engine)
     var isOfflineMode by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var enrolledFarmersExpanded by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -191,19 +193,9 @@ fun EnrollFarmerScreen(
             .testTag("enroll_farmer_screen"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Interactive App Intro & How to Use Banner
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-            AppIntroBanner(
-                onNavigateToRegister = { /* Current Screen */ },
-                onNavigateToPractice = onNavigateToPractice,
-                onNavigateToSync = onNavigateToSync,
-                onOpenFullGuide = onOpenGuide
-            )
-        }
-
         // Agent Banner Header
         item {
+            Spacer(modifier = Modifier.height(4.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -254,7 +246,7 @@ fun EnrollFarmerScreen(
                                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
                                     Icon(
-                                        Icons.Default.HelpOutline,
+                                        Icons.AutoMirrored.Filled.HelpOutline,
                                         contentDescription = null,
                                         tint = Color.White,
                                         modifier = Modifier.size(12.dp)
@@ -273,7 +265,7 @@ fun EnrollFarmerScreen(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = if (isOfflineMode) "OFFLINE SQLITE QUEUE" else "ONLINE SYNC READY",
+                                    text = if (isOfflineMode) "OFFLINE QUEUE" else "ONLINE SYNC",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isOfflineMode) WarningAmber else ComplianceGreen,
@@ -291,7 +283,7 @@ fun EnrollFarmerScreen(
                     )
 
                     Text(
-                        text = "Zero-Literacy Principle: No app download, data plan, or literacy required for farmer. Mobile phone number is their primary provenance identity.",
+                        text = "Smallholder export provenance registration and farm boundary verification.",
                         fontSize = 11.sp,
                         color = Color(0xFFC8E6C9),
                         lineHeight = 15.sp
@@ -666,7 +658,7 @@ fun EnrollFarmerScreen(
                         Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isOfflineMode) "Save Farmer to Local SQLite (pending_sync)" else "Enroll & Sync to Backend",
+                            text = if (isOfflineMode) "Register Farmer (Offline Queue)" else "Register & Sync Farmer",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -675,78 +667,94 @@ fun EnrollFarmerScreen(
             }
         }
 
-        // Section: Enrolled Farmers History & Offline Status
+        // Section: Enrolled Farmers History (Closed by default with dropdown arrow)
         item {
-            Text(
-                text = "Enrolled Smallholders (${enrolledFarmers.size})",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp)
+            DropdownSectionHeader(
+                title = "Enrolled Smallholders",
+                count = enrolledFarmers.size,
+                isExpanded = enrolledFarmersExpanded,
+                onToggle = { enrolledFarmersExpanded = !enrolledFarmersExpanded },
+                icon = Icons.Default.Person,
+                subtitle = if (enrolledFarmersExpanded) "Tap to collapse" else "Tap to view list",
+                testTag = "enrolled_farmers_dropdown_header"
             )
         }
 
-        items(enrolledFarmers.take(8), key = { it.id }) { farmer ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("enrolled_farmer_card_${farmer.id}"),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(10.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E9E2))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = farmer.fullName,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
+        if (enrolledFarmersExpanded) {
+            if (enrolledFarmers.isEmpty()) {
+                item {
+                    Text(
+                        text = "No smallholders enrolled yet.",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            } else {
+                items(enrolledFarmers.take(12), key = { it.id }) { farmer ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("enrolled_farmer_card_${farmer.id}"),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E9E2))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = farmer.fullName,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Surface(
+                                        color = if (farmer.syncStatus == "synced") Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = farmer.syncStatus,
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (farmer.syncStatus == "synced") ComplianceGreen else WarningAmber,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = "${farmer.crop} • ${farmer.farmSize} ${farmer.farmSizeUnit} • Phone: ${farmer.phoneNumber}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF616161)
+                                )
+                                Text(
+                                    text = "GPS: ${farmer.gpsCoordinates} • ${farmer.cooperative}",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+
                             Surface(
-                                color = if (farmer.syncStatus == "synced") Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
-                                shape = RoundedCornerShape(4.dp)
+                                color = Color(0xFFF1F8E9),
+                                shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = farmer.syncStatus,
-                                    fontSize = 9.sp,
+                                    text = farmer.farmerCode.ifBlank { "PENDING" },
                                     fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (farmer.syncStatus == "synced") ComplianceGreen else WarningAmber,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    color = ComplianceGreen,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                 )
                             }
                         }
-
-                        Text(
-                            text = "${farmer.crop} • ${farmer.farmSize} ${farmer.farmSizeUnit} • Phone: ${farmer.phoneNumber}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF616161)
-                        )
-                        Text(
-                            text = "GPS: ${farmer.gpsCoordinates} • ${farmer.cooperative}",
-                            fontSize = 10.sp,
-                            color = Color.Gray
-                        )
-                    }
-
-                    Surface(
-                        color = Color(0xFFF1F8E9),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = farmer.farmerCode.ifBlank { "PENDING" },
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ComplianceGreen,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
                     }
                 }
             }

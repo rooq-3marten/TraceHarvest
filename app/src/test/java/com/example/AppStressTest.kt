@@ -361,4 +361,114 @@ class AppStressTest {
             assertFalse("Flagged batch must NOT be automatically anchored", batch.isBlockchainAnchored)
         }
     }
+
+    // =========================================================================
+    // 6. IDEMPOTENT FASTAPI BATCH SYNC & CONCURRENCY STRESS
+    // =========================================================================
+
+    @Test
+    fun `stress test idempotent batch sync with concurrent sync calls to verify zero duplicates`() {
+        runBlocking {
+            // Register 20 farmers in offline mode
+            for (i in 1..20) {
+                repository.registerFarmer(
+                    fullName = "Stress Farmer $i",
+                    phoneNumber = "+234803000${String.format(java.util.Locale.ROOT, "%04d", i)}",
+                    state = if (i % 2 == 0) "Kano" else "Jigawa",
+                    lga = "LGA $i",
+                    community = "Village $i",
+                    crop = "Sesame",
+                    farmSize = 2.0 + i,
+                    farmSizeUnit = "hectares",
+                    farmSizeHectares = 2.0 + i,
+                    latitude = 12.0 + (i * 0.01),
+                    longitude = 8.5 + (i * 0.01),
+                    cooperative = "Coop $i",
+                    agentId = "AGENT-NG-042",
+                    isOfflineMode = true
+                )
+            }
+
+            val pendingCountBefore = repository.pendingFarmerSyncCount.first()
+            assertEquals(20, pendingCountBefore)
+
+            // Simulate 10 rapid concurrent taps on "Sync Now" across parallel coroutines
+            val syncDeferreds = (1..10).map {
+                async(Dispatchers.IO) {
+                    repository.syncAllPending()
+                }
+            }
+            val syncResults = syncDeferreds.awaitAll()
+
+            // After concurrent sync, pending count must be 0
+            val pendingCountAfter = repository.pendingFarmerSyncCount.first()
+            assertEquals(0, pendingCountAfter)
+
+            // Total farmers in database must remain exactly 20 (zero duplicate insertions)
+            val totalFarmers = repository.farmerCount.first()
+            assertEquals(20, totalFarmers)
+
+            // Every farmer must have syncStatus = "synced"
+            val allFarmers = repository.allFarmers.first()
+            assertTrue(allFarmers.all { it.syncStatus == "synced" })
+            assertTrue(allFarmers.all { it.isSynced })
+            assertTrue(allFarmers.all { it.clientUuid.isNotBlank() })
+        }
+    }
+
+    // =========================================================================
+    // 7. OVERWORKED HIGH-VOLUME STRESS TESTING
+    // =========================================================================
+
+    @Test
+    fun `stress test overworked application under heavy multi-threaded load`() {
+        runBlocking {
+            val totalOperations = 100
+            val successCount = AtomicInteger(0)
+
+            // Overwork repository with concurrent mixed operations: farmer registration + practice logging + batch queries
+            val jobs = (1..totalOperations).map { index ->
+                async(Dispatchers.IO) {
+                    val code = "TH-LOAD-$index"
+                    repository.registerFarmer(
+                        fullName = "Overworked Farmer $index",
+                        phoneNumber = "+2348000000$index",
+                        state = "Kaduna",
+                        lga = "Zaria",
+                        community = "Samaru",
+                        crop = "Soybeans",
+                        farmSize = 3.5,
+                        farmSizeUnit = "hectares",
+                        farmSizeHectares = 3.5,
+                        latitude = 11.0855,
+                        longitude = 7.7199,
+                        cooperative = "Zaria Soy",
+                        agentId = "AGENT-LOAD",
+                        isOfflineMode = index % 2 == 0
+                    )
+
+                    repository.logPractice(
+                        farmerCode = code,
+                        farmerName = "Overworked Farmer $index",
+                        crop = "Soybeans",
+                        category = "Fertilizer",
+                        productName = "Indorama NPK 15:15:15",
+                        activeIngredient = "NPK Compound",
+                        dosage = "2 Bags",
+                        phiDays = 0,
+                        syncStatus = "synced"
+                    )
+
+                    successCount.incrementAndGet()
+                }
+            }
+
+            jobs.awaitAll()
+            assertEquals(totalOperations, successCount.get())
+
+            // Verify database consistency under high load
+            val finalFarmers = repository.allFarmers.first()
+            assertTrue(finalFarmers.size >= totalOperations)
+        }
+    }
 }

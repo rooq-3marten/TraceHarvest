@@ -9,33 +9,33 @@ import com.squareup.moshi.JsonClass
  */
 @JsonClass(generateAdapter = true)
 data class FarmerSyncDto(
-    @Json(name = "client_uuid")
+    @field:Json(name = "client_uuid")
     val clientUuid: String,
-    @Json(name = "full_name")
+    @field:Json(name = "full_name")
     val fullName: String,
-    @Json(name = "phone_number")
+    @field:Json(name = "phone_number")
     val phoneNumber: String,
-    @Json(name = "state")
+    @field:Json(name = "state")
     val state: String,
-    @Json(name = "lga")
+    @field:Json(name = "lga")
     val lga: String,
-    @Json(name = "community")
+    @field:Json(name = "community")
     val community: String,
-    @Json(name = "crop")
+    @field:Json(name = "crop")
     val crop: String,
-    @Json(name = "farm_size_hectares")
+    @field:Json(name = "farm_size_hectares")
     val farmSizeHectares: Double,
-    @Json(name = "latitude")
+    @field:Json(name = "latitude")
     val latitude: Double,
-    @Json(name = "longitude")
+    @field:Json(name = "longitude")
     val longitude: Double,
-    @Json(name = "gps_polygon")
+    @field:Json(name = "gps_polygon")
     val gpsPolygon: String? = null,
-    @Json(name = "cooperative_name")
+    @field:Json(name = "cooperative_name")
     val cooperativeName: String? = null,
-    @Json(name = "agent_id")
+    @field:Json(name = "agent_id")
     val agentId: String,
-    @Json(name = "created_at_epoch_ms")
+    @field:Json(name = "created_at_epoch_ms")
     val createdAtEpochMs: Long
 )
 
@@ -45,39 +45,39 @@ data class FarmerSyncDto(
  */
 @JsonClass(generateAdapter = true)
 data class PracticeLogSyncDto(
-    @Json(name = "client_uuid")
+    @field:Json(name = "client_uuid")
     val clientUuid: String,
-    @Json(name = "farmer_client_uuid")
+    @field:Json(name = "farmer_client_uuid")
     val farmerClientUuid: String,
-    @Json(name = "farmer_code")
+    @field:Json(name = "farmer_code")
     val farmerCode: String,
-    @Json(name = "practice_type")
+    @field:Json(name = "practice_type")
     val practiceType: String,
-    @Json(name = "product_name")
+    @field:Json(name = "product_name")
     val productName: String? = null,
-    @Json(name = "active_ingredient")
+    @field:Json(name = "active_ingredient")
     val activeIngredient: String? = null,
-    @Json(name = "dosage")
+    @field:Json(name = "dosage")
     val dosage: String? = null,
-    @Json(name = "quantity_used")
+    @field:Json(name = "quantity_used")
     val quantityUsed: Double? = null,
-    @Json(name = "quantity_unit")
+    @field:Json(name = "quantity_unit")
     val quantityUnit: String? = null,
-    @Json(name = "date_applied_epoch_ms")
+    @field:Json(name = "date_applied_epoch_ms")
     val dateAppliedEpochMs: Long,
-    @Json(name = "pre_harvest_interval_days")
+    @field:Json(name = "pre_harvest_interval_days")
     val preHarvestIntervalDays: Int = 0,
-    @Json(name = "nafdac_reg_no")
+    @field:Json(name = "nafdac_reg_no")
     val nafdacRegNo: String? = null,
-    @Json(name = "nafdac_approved")
+    @field:Json(name = "nafdac_approved")
     val nafdacApproved: Boolean = true,
-    @Json(name = "gps_coordinates")
+    @field:Json(name = "gps_coordinates")
     val gpsCoordinates: String,
-    @Json(name = "risk_level")
+    @field:Json(name = "risk_level")
     val riskLevel: String = "COMPLIANT",
-    @Json(name = "agent_id")
+    @field:Json(name = "agent_id")
     val agentId: String,
-    @Json(name = "verification_photo_uri")
+    @field:Json(name = "verification_photo_uri")
     val verificationPhotoUri: String? = null
 )
 
@@ -86,13 +86,13 @@ data class PracticeLogSyncDto(
  */
 @JsonClass(generateAdapter = true)
 data class AgentBatchSyncRequest(
-    @Json(name = "agent_id")
+    @field:Json(name = "agent_id")
     val agentId: String,
-    @Json(name = "device_timestamp_ms")
+    @field:Json(name = "device_timestamp_ms")
     val deviceTimestampMs: Long,
-    @Json(name = "farmers")
+    @field:Json(name = "farmers")
     val farmers: List<FarmerSyncDto>,
-    @Json(name = "practices")
+    @field:Json(name = "practices")
     val practices: List<PracticeLogSyncDto>
 )
 
@@ -101,16 +101,16 @@ data class AgentBatchSyncRequest(
  */
 @JsonClass(generateAdapter = true)
 data class AgentBatchSyncResponse(
-    @Json(name = "status")
+    @field:Json(name = "status")
     val status: String = "success",
-    @Json(name = "synced_farmers_count")
+    @field:Json(name = "synced_farmers_count")
     val syncedFarmersCount: Int = 0,
-    @Json(name = "synced_practices_count")
+    @field:Json(name = "synced_practices_count")
     val syncedPracticesCount: Int = 0,
-    @Json(name = "assigned_farmer_ids")
+    @field:Json(name = "assigned_farmer_ids")
     val assignedFarmerIds: Map<String, String> = emptyMap(), // Maps clientUuid -> Official Server ID (e.g. TH-KAN-2026-1048)
-    @Json(name = "server_timestamp_ms")
+    @field:Json(name = "server_timestamp_ms")
     val serverTimestampMs: Long = System.currentTimeMillis(),
-    @Json(name = "message")
+    @field:Json(name = "message")
     val message: String = "Sync completed successfully"
 )

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Shield
@@ -449,6 +451,96 @@ fun NairaValueChip(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = ComplianceGreen
+            )
+        }
+    }
+}
+
+/**
+ * Collapsible section header styled with Material 3 design guidelines.
+ * Uses standard dropdown arrow icons (ArrowDropDown when closed, ArrowDropUp when open).
+ * Keeps secondary lists closed by default to avoid screen clutter.
+ */
+@Composable
+fun DropdownSectionHeader(
+    title: String,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    count: Int? = null,
+    testTag: String = "dropdown_section_header"
+) {
+    Surface(
+        onClick = onToggle,
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFFF7F9F6),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E7DF)),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = ComplianceGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            color = Color(0xFF1E2D24)
+                        )
+                        if (count != null) {
+                            Surface(
+                                color = ComplianceGreen.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = count.toString(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ComplianceGreen,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            fontSize = 11.sp,
+                            color = Color(0xFF6B7280)
+                        )
+                    }
+                }
+            }
+            Icon(
+                imageVector = if (isExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                tint = Color(0xFF4B5563),
+                modifier = Modifier.size(28.dp)
             )
         }
     }
