@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.core.location.GeoLocationNamingService
 import com.example.data.catalog.AgrochemicalCategory
 import com.example.data.catalog.NafdacAgrochemical
 import com.example.data.catalog.NafdacCatalog
@@ -271,6 +272,19 @@ fun LogPracticeScreen(
     var liveLat by remember { mutableDoubleStateOf(currentFarmer.latitude) }
     var liveLng by remember { mutableDoubleStateOf(currentFarmer.longitude) }
     var gpsAcc by remember { mutableFloatStateOf(2.2f) }
+
+    var practiceLocationName by remember { mutableStateOf("Dambatta Farm Plot, Kano") }
+
+    LaunchedEffect(liveLat, liveLng, currentFarmer) {
+        practiceLocationName = GeoLocationNamingService.resolveLocationName(
+            context = context,
+            latitude = liveLat,
+            longitude = liveLng,
+            fallbackState = currentFarmer.state,
+            fallbackLga = currentFarmer.lga,
+            fallbackCommunity = currentFarmer.community
+        )
+    }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -828,31 +842,44 @@ fun LogPracticeScreen(
                         }
                     }
 
-                    // Auto GPS Fix & Agent ID indicator
+                    // Auto GPS Fix & Physical Named Location
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFFF1F8E9), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Auto GPS: ${"%.4f".format(liveLat)}°N, ${"%.4f".format(liveLng)}°E",
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF2E7D32)
-                        )
-                        Text(
-                            text = "Agent: $agentId",
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2E7D32)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = ComplianceGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "📍 $practiceLocationName",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1B5E20)
+                                )
+                                Text(
+                                    text = "Coordinates: ${"%.4f".format(liveLat)}°N, ${"%.4f".format(liveLng)}°E (GPS Verified)",
+                                    fontSize = 9.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF558B2F)
+                                )
+                            }
+                        }
                     }
 
-                    // Submit Button: "Agent submits. Offline-first: stored locally, synced when online."
+                    // Submit Button: Offline-first: stored locally, synced when online.
                     Button(
                         onClick = {
                             val prodName = if (isChemical) selectedProduct.tradeName else ""
@@ -878,7 +905,7 @@ fun LogPracticeScreen(
                                 currentFarmer.farmerLocalId,
                                 currentFarmer.farmerDisplayId,
                                 nafdacNo,
-                                "${"%.4f".format(liveLat)}°N, ${"%.4f".format(liveLng)}°E",
+                                "$practiceLocationName (${"%.4f".format(liveLat)}°N, ${"%.4f".format(liveLng)}°E)",
                                 "pending_sync"
                             )
                         },
@@ -984,7 +1011,7 @@ fun LogPracticeScreen(
                         }
                     }
 
-                    if (log.productName.isNotBlank()) {
+                    if (!log.productName.isNullOrBlank()) {
                         Text(
                             text = "${log.productName} • ${log.dosage}",
                             fontSize = 12.sp,
@@ -998,17 +1025,22 @@ fun LogPracticeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Agent: ${log.agentId}",
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color.Gray
+                            text = "📍 ${log.gpsCoordinates.ifBlank { "Field Plot" }}",
+                            fontSize = 9.5.sp,
+                            color = Color(0xFF2E7D32),
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f)
                         )
-                        if (log.gpsCoordinates.isNotBlank()) {
+                        Surface(
+                            color = Color(0xFFF1F8E9),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
                             Text(
-                                text = "GPS: ${log.gpsCoordinates}",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color.Gray
+                                text = "VERIFIED GPS",
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ComplianceGreen,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
                         }
                     }

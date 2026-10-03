@@ -40,7 +40,10 @@ class TraceHarvestViewModel @JvmOverloads constructor(
     val currentAgentId = "AGENT-NG-042"
 
     private val repository: ITraceHarvestRepository = repositoryInstance 
-        ?: TraceHarvestRepository(AppDatabase.getDatabase(application).traceHarvestDao())
+        ?: run {
+            val db = AppDatabase.getDatabase(application)
+            TraceHarvestRepository(db.traceHarvestDao(), db.pendingSyncDao())
+        }
 
     val allFarmers: StateFlow<List<FarmerEntity>>
     val allPracticeLogs: StateFlow<List<PracticeLogEntity>>

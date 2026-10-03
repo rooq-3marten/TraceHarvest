@@ -72,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.core.location.GeoLocationNamingService
 import com.example.data.local.entity.FarmerEntity
 import com.example.ui.components.DropdownSectionHeader
 import com.example.ui.theme.ComplianceGreen
@@ -186,6 +187,19 @@ fun EnrollFarmerScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var enrolledFarmersExpanded by remember { mutableStateOf(false) }
 
+    var physicalLocationName by remember { mutableStateOf("Dambatta Sesame Hub, Kano State") }
+
+    LaunchedEffect(latitude, longitude, selectedState, selectedLga, community) {
+        physicalLocationName = GeoLocationNamingService.resolveLocationName(
+            context = context,
+            latitude = latitude,
+            longitude = longitude,
+            fallbackState = selectedState,
+            fallbackLga = selectedLga,
+            fallbackCommunity = community
+        )
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -223,7 +237,7 @@ fun EnrollFarmerScreen(
                                     .background(ComplianceGreen, CircleShape)
                             )
                             Text(
-                                text = "FIELD AGENT PORTAL • $agentId",
+                                text = "FIELD ENROLLMENT PORTAL",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp,
@@ -345,7 +359,10 @@ fun EnrollFarmerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -357,19 +374,24 @@ fun EnrollFarmerScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = "Phone GPS Coordinates (Auto-Captured)",
+                                        text = "Physical Location (Auto-Tagged from GPS)",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFF2E7D32)
                                     )
                                 }
                                 Text(
-                                    text = "${"%.4f".format(latitude)}°N, ${"%.4f".format(longitude)}°E (±${"%.1f".format(gpsAccuracy)}m)",
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
+                                    text = physicalLocationName,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.Black,
+                                    color = Color(0xFF1B5E20),
                                     modifier = Modifier.testTag("farmer_gps_display")
+                                )
+                                Text(
+                                    text = "Coordinates: ${"%.4f".format(latitude)}°N, ${"%.4f".format(longitude)}°E (±${"%.1f".format(gpsAccuracy)}m)",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF616161)
                                 )
                             }
 
@@ -735,9 +757,9 @@ fun EnrollFarmerScreen(
                                     color = Color(0xFF616161)
                                 )
                                 Text(
-                                    text = "GPS: ${farmer.gpsCoordinates} • ${farmer.cooperative}",
+                                    text = "📍 ${farmer.community.ifBlank { farmer.lga }}, ${farmer.state} • ${farmer.cooperative}",
                                     fontSize = 10.sp,
-                                    color = Color.Gray
+                                    color = Color(0xFF2E7D32)
                                 )
                             }
 

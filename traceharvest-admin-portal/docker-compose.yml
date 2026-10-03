@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  admin-portal:
+    build: .
+    container_name: traceharvest-admin
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:traceharvest_secret@postgres:5432/traceharvest_db
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgis/postgis:15-3.3-alpine
+    container_name: traceharvest-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: traceharvest_secret
+      POSTGRES_DB: traceharvest_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  postgres_data:

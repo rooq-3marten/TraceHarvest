@@ -246,15 +246,14 @@ private fun TraceHarvestTopBar(
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Column {
                     Text(
-                        text = "TraceHarvest Field Agent",
+                        text = "TraceHarvest",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = Color.White
                     )
                     Text(
-                        text = "Agent ID: $agentId",
+                        text = "Export Provenance & Compliance",
                         fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
                         color = Color(0xFFC8E6C9)
                     )
                 }

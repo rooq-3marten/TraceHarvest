@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.example.data.local.dao.PendingSyncDao
 import com.example.data.local.dao.TraceHarvestDao
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.HarvestBatchEntity
+import com.example.data.local.entity.PendingSync
 import com.example.data.local.entity.PracticeLogEntity
 import com.example.data.local.entity.SmsLogEntity
 
@@ -15,13 +17,15 @@ import com.example.data.local.entity.SmsLogEntity
         FarmerEntity::class,
         PracticeLogEntity::class,
         HarvestBatchEntity::class,
-        SmsLogEntity::class
+        SmsLogEntity::class,
+        PendingSync::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun traceHarvestDao(): TraceHarvestDao
+    abstract fun pendingSyncDao(): PendingSyncDao
 
     companion object {
         @Volatile

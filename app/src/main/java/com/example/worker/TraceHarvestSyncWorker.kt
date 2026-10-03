@@ -30,7 +30,7 @@ class TraceHarvestSyncWorker(
 
         return try {
             val database = AppDatabase.getDatabase(applicationContext)
-            val repository = TraceHarvestRepository(database.traceHarvestDao())
+            val repository = TraceHarvestRepository(database.traceHarvestDao(), database.pendingSyncDao())
 
             val result = repository.syncAllPending()
 

@@ -1,10 +1,11 @@
 package com.example.data.repository
 
 import com.example.data.catalog.NafdacCatalog
-import com.example.data.catalog.NafdacExportCompliance
+import com.example.data.local.dao.PendingSyncDao
 import com.example.data.local.dao.TraceHarvestDao
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.HarvestBatchEntity
+import com.example.data.local.entity.PendingSync
 import com.example.data.local.entity.PracticeLogEntity
 import com.example.data.local.entity.SmsLogEntity
 import com.example.data.remote.NetworkClient
@@ -19,7 +20,10 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlin.random.Random
 
-class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRepository {
+class TraceHarvestRepository(
+    private val dao: TraceHarvestDao,
+    private val pendingSyncDao: PendingSyncDao? = null
+) : ITraceHarvestRepository {
 
     override val allFarmers: Flow<List<FarmerEntity>> = dao.getAllFarmers()
     override val allPracticeLogs: Flow<List<PracticeLogEntity>> = dao.getAllPracticeLogs()
@@ -39,10 +43,8 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
         dao.getPracticeLogsForFarmer(farmerCode)
 
     override suspend fun checkAndSeedInitialData() = withContext(Dispatchers.IO) {
-        val count = dao.getFarmerCount().first()
-        if (count == 0) {
-            seedInitialDataset()
-        }
+        // Pristine database initialization: No placeholder farmers or values are seeded.
+        // Records are created exclusively through user enrollment and genuine telemetry.
     }
 
     override suspend fun registerFarmer(
@@ -63,14 +65,12 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
     ): FarmerEntity = withContext(Dispatchers.IO) {
         val statePrefix = state.take(3).uppercase(Locale.ROOT)
         val randomDigits = Random.nextInt(1000, 9999)
-        // If offline mode, stored locally as pending_sync with temporary or pending tag;
-        // when synced to backend, unique official ID is confirmed.
         val farmerCode = if (isOfflineMode) "TH-$statePrefix-PENDING-$randomDigits" else "TH-$statePrefix-2026-$randomDigits"
 
         val effectiveHectares = if (farmSizeHectares > 0.0) {
             farmSizeHectares
         } else {
-            when (farmSizeUnit.lowercase()) {
+            when (farmSizeUnit.lowercase(Locale.ROOT)) {
                 "acres" -> farmSize * 0.4047
                 "plots" -> farmSize * 0.05
                 else -> farmSize
@@ -94,6 +94,11 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
             lga = lga.trim(),
             community = community.trim(),
             crop = crop,
+            cropType = crop,
+            name = fullName.trim(),
+            phone = phoneNumber.trim(),
+            gpsLat = latitude,
+            gpsLng = longitude,
             farmSize = effectiveFarmSize,
             farmSizeUnit = farmSizeUnit,
             farmSizeHectares = effectiveHectares,
@@ -101,15 +106,30 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
             longitude = longitude,
             cooperative = cooperative.trim(),
             registrationTimestamp = System.currentTimeMillis(),
+            createdAt = System.currentTimeMillis(),
             farmerDisplayId = farmerCode,
             gpsPolygon = polygonString,
-            syncStatus = if (isOfflineMode) "pending_sync" else "synced",
+            syncStatus = if (isOfflineMode) "PENDING" else "SYNCED",
             isSynced = !isOfflineMode,
             agentId = agentId
         )
-        val id = dao.insertFarmer(farmer)
 
-        farmer.copy(id = id)
+        dao.insertFarmer(farmer)
+
+        // Queue in pending_syncs table for WorkManager offline synchronization
+        if (isOfflineMode) {
+            pendingSyncDao?.insert(
+                PendingSync(
+                    id = farmer.localId,
+                    entityType = "FARMER",
+                    entityId = farmer.localId,
+                    payload = """{"name":"${farmer.name}","phone":"${farmer.phone}","cropType":"${farmer.cropType}","agentId":"$agentId"}""",
+                    status = "PENDING"
+                )
+            )
+        }
+
+        farmer
     }
 
     override suspend fun logPractice(
@@ -137,58 +157,19 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
         agentId: String,
         syncStatus: String
     ): PracticeLogEntity = withContext(Dispatchers.IO) {
-        // NAFDAC Registry validation if product details are present
-        val (matchedAgro, complianceStatus) = if (productName.isNotBlank() || activeIngredient.isNotBlank()) {
-            NafdacCatalog.validateApplication(productName, activeIngredient)
-        } else {
-            Pair(null, NafdacExportCompliance.APPROVED_EXPORT_COMPLIANT)
-        }
-
-        val effectiveRegNo = if (nafdacRegNo.isNotBlank()) nafdacRegNo else (matchedAgro?.nafdacRegNo ?: "")
-        val isNafdacApproved = complianceStatus != NafdacExportCompliance.BANNED_MRL_VIOLATION &&
-                               complianceStatus != NafdacExportCompliance.UNREGISTERED_UNKNOWN
-
-        val (riskLevel, riskNotes) = when (complianceStatus) {
-            NafdacExportCompliance.BANNED_MRL_VIOLATION -> {
-                Pair(
-                    "BANNED_MRL_VIOLATION",
-                    matchedAgro?.safetyWarning ?: "CRITICAL VIOLATION: Banned substance! Causes immediate border rejection under EU/Codex standards."
-                )
-            }
-            NafdacExportCompliance.APPROVED_ORGANIC_PREMIUM -> {
-                Pair(
-                    "COMPLIANT",
-                    "NAFDAC REGISTERED & ORGANIC PREMIUM: Zero synthetic residue. Exempt from chemical MRL limits."
-                )
-            }
-            NafdacExportCompliance.APPROVED_EXPORT_COMPLIANT,
-            NafdacExportCompliance.RESTRICTED_PHI_MONITORED -> {
-                Pair(
-                    "COMPLIANT",
-                    if (effectiveRegNo.isNotBlank()) {
-                        "NAFDAC REGISTERED (${effectiveRegNo}): Approved with observed Pre-Harvest Interval (PHI) of $phiDays days."
-                    } else {
-                        "PRACTICE COMPLIANT: Recorded standard agronomic activity ($practiceType)."
-                    }
-                )
-            }
-            NafdacExportCompliance.UNREGISTERED_UNKNOWN -> {
-                Pair(
-                    "CAUTION",
-                    "UNREGISTERED AGROCHEMICAL: Product not found in official NAFDAC catalog. Requires lab clearance."
-                )
-            }
-        }
-
-        val dosageStr = "$quantityUsed $quantityUnit"
-        val practiceDetails = if (productName.isNotBlank()) {
-            "$practiceType: $productName applied at $dosageStr"
-        } else {
-            "$practiceType recorded at farm plot"
-        }
-
         val farmerObj = dao.getFarmerByCode(farmerCode)
-        val farmerClientUuid = farmerObj?.clientUuid ?: ""
+        val dosageStr = if (dosage.isNotBlank()) dosage else "$quantityUsed $quantityUnit"
+
+        val (matchedAgro, compliance) = NafdacCatalog.validateApplication(productName, activeIngredient)
+        val effectiveRegNo = if (nafdacRegNo.isNotBlank()) nafdacRegNo else (matchedAgro?.nafdacRegNo ?: "")
+        val effectivePhiDays = if (phiDays > 0) phiDays else (matchedAgro?.preHarvestIntervalDays ?: 0)
+        val riskLevel = compliance.name
+        val riskNotes = if (compliance == com.example.data.catalog.NafdacExportCompliance.BANNED_MRL_VIOLATION) {
+            "CRITICAL VIOLATION: BANNED by NAFDAC • Fatal MRL rejection at export border."
+        } else {
+            matchedAgro?.phiGuidelines ?: "Compliance evaluated"
+        }
+        val isNafdacApproved = compliance.isApproved
 
         val log = PracticeLogEntity(
             farmerCode = farmerCode,
@@ -196,18 +177,20 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
             crop = crop,
             practiceType = practiceType,
             category = category,
-            practiceDetails = practiceDetails,
+            practiceDetails = if (productName.isNotBlank()) "$productName - $dosageStr" else practiceType,
             productName = productName,
             activeIngredient = activeIngredient,
             dosage = dosageStr,
+            quantity = quantityUsed,
             quantityUsed = quantityUsed,
             quantityUnit = quantityUnit,
+            logDate = calendarDateApplied,
             dateApplied = calendarDateApplied,
-            preHarvestIntervalDays = phiDays,
+            preHarvestIntervalDays = effectivePhiDays,
             source = source,
             riskLevel = riskLevel,
             riskNotes = riskNotes,
-            isSynced = syncStatus == "synced",
+            isSynced = syncStatus == "SYNCED" || syncStatus == "synced",
             farmerLocalId = farmerLocalId,
             farmerDisplayId = if (farmerDisplayId.isNotBlank()) farmerDisplayId else farmerCode,
             nafdacRegNo = effectiveRegNo,
@@ -222,15 +205,29 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
             syncStatus = syncStatus,
             agentId = agentId,
             serverLoggedTimestamp = System.currentTimeMillis(),
-            farmerClientUuid = farmerClientUuid
+            farmerClientUuid = farmerObj?.localId ?: ""
         )
-        val id = dao.insertPracticeLog(log)
+
+        dao.insertPracticeLog(log)
+
+        // Queue in pending_syncs table
+        if (syncStatus != "SYNCED" && syncStatus != "synced") {
+            pendingSyncDao?.insert(
+                PendingSync(
+                    id = log.localId,
+                    entityType = "PRACTICE_LOG",
+                    entityId = log.localId,
+                    payload = """{"practiceType":"${log.practiceType}","productName":"${log.productName}","farmerCode":"$farmerCode"}""",
+                    status = "PENDING"
+                )
+            )
+        }
 
         // Dispatch verification SMS to farmer if phone number exists
         val phone = farmerObj?.phoneNumber ?: dao.getFarmerByCode(farmerCode)?.phoneNumber
         if (phone != null) {
             val smsText = if (productName.isNotBlank()) {
-                "TraceHarvest: Agent $agentId logged $practiceType ($productName, $dosageStr) on your $crop farm. PHI: $phiDays days. Reply 1 to CONFIRM."
+                "TraceHarvest: Agent $agentId logged $practiceType ($productName, $dosageStr) on your $crop farm. PHI: $effectivePhiDays days. Reply 1 to CONFIRM."
             } else {
                 "TraceHarvest: Agent $agentId recorded $practiceType on your $crop farm today. Reply 1 to CONFIRM."
             }
@@ -242,12 +239,12 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
                     messageType = "PRACTICE_QUERY",
                     content = smsText,
                     timestamp = System.currentTimeMillis(),
-                    status = "DELIVERED"
+                    status = "PENDING_FARMER_CONFIRMATION"
                 )
             )
         }
 
-        log.copy(id = id)
+        log
     }
 
     override suspend fun syncAllPending(): SyncResult = withContext(Dispatchers.IO) {
@@ -328,7 +325,9 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
                 "TH-$statePrefix-2026-$randomDigits"
             }
 
+            dao.markFarmerSyncedByLocalId(farmer.localId, farmer.localId, backendOfficialId)
             dao.markFarmerSynced(farmer.id, backendOfficialId)
+            pendingSyncDao?.markSynced(farmer.localId)
 
             // Backend dispatches official enrollment SMS to farmer
             dao.insertSmsLog(
@@ -348,6 +347,10 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
         if (pendingPractices.isNotEmpty()) {
             val practiceIds = pendingPractices.map { it.id }
             dao.markPracticeLogsSynced(practiceIds)
+            pendingPractices.forEach {
+                dao.markPracticeLogSyncedByLocalId(it.localId, it.localId)
+                pendingSyncDao?.markSynced(it.localId)
+            }
         }
 
         SyncResult(
@@ -426,10 +429,12 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
             region = region,
             harvestDate = System.currentTimeMillis(),
             bagCount = bagCount,
+            totalQuantity = netWeightKg,
             netWeightKg = netWeightKg,
             moisturePercent = moisturePercent,
             foreignMatterPercent = foreignMatterPercent,
             grade = grade,
+            qualityGrade = grade,
             mrlStatus = mrlStatus,
             aflatoxinStatus = aflatoxinStatus,
             phiDaysObserved = daysSinceLastSpray,
@@ -439,11 +444,23 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
             isBlockchainAnchored = !isFlagged,
             isFlaggedForRejection = isFlagged,
             rejectionReason = rejectionReason,
-            qrPayload = qrPayload
+            qrPayload = qrPayload,
+            syncStatus = "PENDING"
         )
 
-        val id = dao.insertBatch(batch)
-        batch.copy(id = id)
+        dao.insertBatch(batch)
+
+        pendingSyncDao?.insert(
+            PendingSync(
+                id = batch.localId,
+                entityType = "BATCH",
+                entityId = batch.localId,
+                payload = """{"batchCode":"$batchCode","crop":"$crop","netWeightKg":$netWeightKg}""",
+                status = "PENDING"
+            )
+        )
+
+        batch
     }
 
     override suspend fun toggleFlagBatch(batchId: Long, currentFlag: Boolean, reason: String?) = withContext(Dispatchers.IO) {
@@ -451,11 +468,19 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
     }
 
     override suspend fun anchorBatch(batchId: Long) = withContext(Dispatchers.IO) {
-        val randomHash = "0x" + (1..40).map { "0123456789abcdef".random() }.joinToString("")
-        dao.anchorBatchToBlockchain(batchId, randomHash)
+        val txId = "0x" + MessageDigest.getInstance("SHA-256")
+            .digest("${batchId}_${System.currentTimeMillis()}".toByteArray())
+            .joinToString("") { "%02x".format(it) }
+            .take(40)
+        dao.anchorBatchToBlockchain(batchId, txId)
     }
 
-    override suspend fun simulateIncomingFarmerSms(phone: String, farmerName: String, replyText: String, messageType: String): Unit = withContext(Dispatchers.IO) {
+    override suspend fun simulateIncomingFarmerSms(
+        phone: String,
+        farmerName: String,
+        replyText: String,
+        messageType: String
+    ) = withContext(Dispatchers.IO) {
         dao.insertSmsLog(
             SmsLogEntity(
                 farmerPhone = phone,
@@ -464,25 +489,7 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
                 messageType = messageType,
                 content = replyText,
                 timestamp = System.currentTimeMillis(),
-                status = "CONFIRMED"
-            )
-        )
-
-        val ackContent = when (replyText.trim().uppercase(Locale.ROOT)) {
-            "1", "CONFIRM", "YES", "EEY" -> "TraceHarvest: Na gode! Your confirmation has been digitally signed and timestamped on your export ledger record."
-            "2", "NO", "AA" -> "TraceHarvest: Recorded. Field Supervisor has been alerted to inspect your farm within 24 hours."
-            else -> "TraceHarvest: Message received and logged against your farmer record ID."
-        }
-
-        dao.insertSmsLog(
-            SmsLogEntity(
-                farmerPhone = phone,
-                farmerName = farmerName,
-                direction = "OUTBOUND",
-                messageType = "STATUS_QUERY",
-                content = ackContent,
-                timestamp = System.currentTimeMillis() + 1000,
-                status = "DELIVERED"
+                status = "PROCESSED"
             )
         )
         Unit
@@ -491,185 +498,5 @@ class TraceHarvestRepository(private val dao: TraceHarvestDao) : ITraceHarvestRe
     private fun generateSha256(input: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }
-    }
-
-    private suspend fun seedInitialDataset() {
-        val now = System.currentTimeMillis()
-        val day = 86400000L
-
-        val initialFarmers = listOf(
-            FarmerEntity(
-                id = 1L,
-                farmerCode = "TH-KAN-2026-1048",
-                fullName = "Musa Ibrahim Dambatta",
-                phoneNumber = "+2348034512991",
-                state = "Kano",
-                lga = "Dambatta",
-                community = "Fagwalawa",
-                crop = "Sesame",
-                farmSize = 4.5,
-                farmSizeUnit = "hectares",
-                farmSizeHectares = 4.5,
-                latitude = 12.4358,
-                longitude = 8.5147,
-                cooperative = "Dambatta Sesame Growers Union",
-                registrationTimestamp = now - 65 * day,
-                farmerDisplayId = "TH-KAN-2026-1048",
-                gpsPolygon = "12.4374,8.5131;12.4374,8.5163;12.4342,8.5163;12.4342,8.5131",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            ),
-            FarmerEntity(
-                id = 2L,
-                farmerCode = "TH-JIG-2026-2819",
-                fullName = "Amina Abubakar Maigatari",
-                phoneNumber = "+2348167823412",
-                state = "Jigawa",
-                lga = "Maigatari",
-                community = "Galadi",
-                crop = "Sesame",
-                farmSize = 6.0,
-                farmSizeUnit = "hectares",
-                farmSizeHectares = 6.0,
-                latitude = 12.8122,
-                longitude = 9.4589,
-                cooperative = "Maigatari Export Cluster",
-                registrationTimestamp = now - 58 * day,
-                farmerDisplayId = "TH-JIG-2026-2819",
-                gpsPolygon = "12.8140,9.4571;12.8140,9.4607;12.8104,9.4607;12.8104,9.4571",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            ),
-            FarmerEntity(
-                id = 3L,
-                farmerCode = "TH-BEN-2026-4401",
-                fullName = "Terkimbi Terver",
-                phoneNumber = "+2348059918234",
-                state = "Benue",
-                lga = "Makurdi",
-                community = "Agan",
-                crop = "Cowpea",
-                farmSize = 8.0,
-                farmSizeUnit = "plots",
-                farmSizeHectares = 3.2,
-                latitude = 7.7322,
-                longitude = 8.5391,
-                cooperative = "Benue Valley Grain Alliance",
-                registrationTimestamp = now - 50 * day,
-                farmerDisplayId = "TH-BEN-2026-4401",
-                gpsPolygon = "7.7335,8.5378;7.7335,8.5404;7.7309,8.5404;7.7309,8.5378",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            ),
-            FarmerEntity(
-                id = 4L,
-                farmerCode = "TH-KAD-2026-6210",
-                fullName = "Garba Lawal Kachia",
-                phoneNumber = "+2348023190822",
-                state = "Kaduna",
-                lga = "Kachia",
-                community = "Gumel",
-                crop = "Ginger",
-                farmSize = 7.0,
-                farmSizeUnit = "acres",
-                farmSizeHectares = 2.8,
-                latitude = 9.8731,
-                longitude = 7.9542,
-                cooperative = "Kaduna High-Oleoresin Ginger Union",
-                registrationTimestamp = now - 42 * day,
-                farmerDisplayId = "TH-KAD-2026-6210",
-                gpsPolygon = "9.8743,7.9530;9.8743,7.9554;9.8719,7.9554;9.8719,7.9530",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            )
-        )
-        dao.insertFarmers(initialFarmers)
-
-        val initialLogs = listOf(
-            PracticeLogEntity(
-                id = 1L,
-                farmerCode = "TH-KAN-2026-1048",
-                farmerName = "Musa Ibrahim Dambatta",
-                crop = "Sesame",
-                practiceType = "🧪 Pesticide application",
-                category = "Pesticide Application",
-                practiceDetails = "Karate 5 EC applied at 400 ml",
-                productName = "Karate 5 EC",
-                activeIngredient = "Lambda-cyhalothrin (50 g/L EC)",
-                dosage = "400 ml",
-                quantityUsed = 400.0,
-                quantityUnit = "ml",
-                dateApplied = now - 28 * day,
-                preHarvestIntervalDays = 14,
-                source = "Agent Mobile App",
-                riskLevel = "COMPLIANT",
-                riskNotes = "NAFDAC REGISTERED (04-2015): PHI observed 28 days.",
-                farmerLocalId = 1L,
-                farmerDisplayId = "TH-KAN-2026-1048",
-                nafdacRegNo = "04-2015",
-                nafdacApproved = true,
-                gpsCoordinates = "12.4358°N, 8.5147°E",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            ),
-            PracticeLogEntity(
-                id = 2L,
-                farmerCode = "TH-KAN-2026-1048",
-                farmerName = "Musa Ibrahim Dambatta",
-                crop = "Sesame",
-                practiceType = "🌿 Fertilizer application",
-                category = "Fertilizer / Soil",
-                practiceDetails = "Basal application of Indorama Granular NPK compound",
-                productName = "Indorama NPK 15:15:15",
-                activeIngredient = "Nitrogen 15% - Phosphorus 15% - Potassium 15%",
-                dosage = "3 Bags",
-                quantityUsed = 3.0,
-                quantityUnit = "Bags",
-                dateApplied = now - 45 * day,
-                preHarvestIntervalDays = 0,
-                source = "Agent Mobile App",
-                riskLevel = "COMPLIANT",
-                riskNotes = "NAFDAC REGISTERED (04-7892): PHI 0 days.",
-                farmerLocalId = 1L,
-                farmerDisplayId = "TH-KAN-2026-1048",
-                nafdacRegNo = "04-7892",
-                nafdacApproved = true,
-                gpsCoordinates = "12.4358°N, 8.5147°E",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            ),
-            PracticeLogEntity(
-                id = 3L,
-                farmerCode = "TH-JIG-2026-2819",
-                farmerName = "Amina Abubakar Maigatari",
-                crop = "Sesame",
-                practiceType = "🌱 Planting",
-                category = "Planting",
-                practiceDetails = "Seed sowing with verified certified sesame seed",
-                productName = "Certified NCRI Sesame Seed",
-                dosage = "10 kg",
-                quantityUsed = 10.0,
-                quantityUnit = "kg",
-                dateApplied = now - 60 * day,
-                preHarvestIntervalDays = 0,
-                source = "Agent Mobile App",
-                riskLevel = "COMPLIANT",
-                riskNotes = "Planting registered and cluster geotagged.",
-                farmerLocalId = 2L,
-                farmerDisplayId = "TH-JIG-2026-2819",
-                nafdacApproved = true,
-                gpsCoordinates = "12.8122°N, 9.4589°E",
-                syncStatus = "synced",
-                isSynced = true,
-                agentId = "AGENT-NG-042"
-            )
-        )
-        dao.insertPracticeLogs(initialLogs)
     }
 }

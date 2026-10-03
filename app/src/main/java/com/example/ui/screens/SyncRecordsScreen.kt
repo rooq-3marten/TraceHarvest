@@ -21,9 +21,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +35,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -41,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.PracticeLogEntity
+import com.example.data.remote.NetworkClient
 import com.example.ui.theme.ComplianceGreen
 import com.example.ui.theme.HarvestGreenPrimary
 import com.example.ui.theme.WarningAmber
@@ -73,6 +82,10 @@ fun SyncRecordsScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Pending Queue ($totalPendingCount)", "All Farmers (${farmers.size})", "Practice Trail (${practices.size})")
+
+    var showServerSettings by remember { mutableStateOf(false) }
+    var serverInputUrl by remember { mutableStateOf(NetworkClient.getServerUrl()) }
+    var serverStatusMessage by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -121,20 +134,6 @@ fun SyncRecordsScreen(
                                 color = if (totalPendingCount > 0) Color(0xFF795548) else Color(0xFFA5D6A7)
                             )
                         }
-
-                        Surface(
-                            color = Color(0x33000000),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = "AGENT: $agentId",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = if (totalPendingCount > 0) Color(0xFF5D4037) else Color(0xFFC8E6C9),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
                     }
 
                     Text(
@@ -180,6 +179,131 @@ fun SyncRecordsScreen(
                                 text = if (totalPendingCount > 0) "Sync Now ($totalPendingCount Queued)" else "All Records Up-to-Date",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Admin Website Connection Settings Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E0E0))
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Dns,
+                                contentDescription = "Admin Website Connection",
+                                tint = HarvestGreenPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "ADMIN WEBSITE CONNECTION",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1B5E20)
+                                )
+                                Text(
+                                    text = "Target: ${NetworkClient.getServerUrl()}",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showServerSettings = !showServerSettings },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (showServerSettings) Icons.Default.Link else Icons.Default.Settings,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (showServerSettings) "Close" else "Configure", fontSize = 11.sp)
+                        }
+                    }
+
+                    if (showServerSettings) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Enter your deployed Admin Website / API Base URL. Sync records will be transmitted directly to this endpoint via POST /api/v1/sync/upstream.",
+                            fontSize = 10.sp,
+                            color = Color(0xFF424242),
+                            lineHeight = 14.sp
+                        )
+
+                        OutlinedTextField(
+                            value = serverInputUrl,
+                            onValueChange = {
+                                serverInputUrl = it
+                                serverStatusMessage = null
+                            },
+                            label = { Text("Admin API Base URL", fontSize = 11.sp) },
+                            placeholder = { Text("https://my-admin-website.com/", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    NetworkClient.setServerUrl(serverInputUrl)
+                                    serverStatusMessage = "Target URL updated: ${NetworkClient.getServerUrl()}"
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = HarvestGreenPrimary),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Save Endpoint", fontSize = 11.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    serverInputUrl = NetworkClient.DEFAULT_SERVER_URL
+                                    NetworkClient.setServerUrl(NetworkClient.DEFAULT_SERVER_URL)
+                                    serverStatusMessage = "Reset to default endpoint"
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.height(38.dp)
+                            ) {
+                                Text("Reset Default", fontSize = 11.sp)
+                            }
+                        }
+
+                        serverStatusMessage?.let { msg ->
+                            Text(
+                                text = "✓ $msg",
+                                fontSize = 10.sp,
+                                color = ComplianceGreen,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -396,7 +520,7 @@ private fun PracticeQueueCard(log: PracticeLogEntity) {
                 color = Color.DarkGray
             )
 
-            if (log.productName.isNotBlank()) {
+            if (!log.productName.isNullOrBlank()) {
                 Text(
                     text = "${log.productName} • ${log.dosage}",
                     fontSize = 11.sp,

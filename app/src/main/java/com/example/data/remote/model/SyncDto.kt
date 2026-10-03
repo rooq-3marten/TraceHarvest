@@ -4,8 +4,7 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 /**
- * Pydantic v2 compatible DTO for syncing Farmer entity to FastAPI + PostgreSQL.
- * [clientUuid] serves as the idempotent key in PostgreSQL (ON CONFLICT DO NOTHING / UPDATE).
+ * Farmer DTO matching backend POST /farmers and bulk POST /sync/batch
  */
 @JsonClass(generateAdapter = true)
 data class FarmerSyncDto(
@@ -16,15 +15,15 @@ data class FarmerSyncDto(
     @field:Json(name = "phone_number")
     val phoneNumber: String,
     @field:Json(name = "state")
-    val state: String,
+    val state: String = "Kano",
     @field:Json(name = "lga")
-    val lga: String,
+    val lga: String = "Dambatta",
     @field:Json(name = "community")
-    val community: String,
+    val community: String = "",
     @field:Json(name = "crop")
     val crop: String,
     @field:Json(name = "farm_size_hectares")
-    val farmSizeHectares: Double,
+    val farmSizeHectares: Double = 1.0,
     @field:Json(name = "latitude")
     val latitude: Double,
     @field:Json(name = "longitude")
@@ -34,14 +33,13 @@ data class FarmerSyncDto(
     @field:Json(name = "cooperative_name")
     val cooperativeName: String? = null,
     @field:Json(name = "agent_id")
-    val agentId: String,
+    val agentId: String = "AGENT-NG-042",
     @field:Json(name = "created_at_epoch_ms")
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long = System.currentTimeMillis()
 )
 
 /**
- * Pydantic v2 compatible DTO for syncing Practice Log entity to FastAPI + PostgreSQL.
- * [clientUuid] guarantees idempotency over unstable rural 2G/3G networks.
+ * Practice Log DTO matching backend POST /practice-logs
  */
 @JsonClass(generateAdapter = true)
 data class PracticeLogSyncDto(
@@ -64,7 +62,7 @@ data class PracticeLogSyncDto(
     @field:Json(name = "quantity_unit")
     val quantityUnit: String? = null,
     @field:Json(name = "date_applied_epoch_ms")
-    val dateAppliedEpochMs: Long,
+    val dateAppliedEpochMs: Long = System.currentTimeMillis(),
     @field:Json(name = "pre_harvest_interval_days")
     val preHarvestIntervalDays: Int = 0,
     @field:Json(name = "nafdac_reg_no")
@@ -72,32 +70,97 @@ data class PracticeLogSyncDto(
     @field:Json(name = "nafdac_approved")
     val nafdacApproved: Boolean = true,
     @field:Json(name = "gps_coordinates")
-    val gpsCoordinates: String,
+    val gpsCoordinates: String = "",
     @field:Json(name = "risk_level")
     val riskLevel: String = "COMPLIANT",
     @field:Json(name = "agent_id")
-    val agentId: String,
+    val agentId: String = "AGENT-NG-042",
     @field:Json(name = "verification_photo_uri")
     val verificationPhotoUri: String? = null
 )
 
 /**
- * Batch request sent from Android App to FastAPI endpoint POST /api/v1/sync/upstream
+ * Batch DTO matching backend POST /batches
+ */
+@JsonClass(generateAdapter = true)
+data class BatchSyncDto(
+    @field:Json(name = "client_uuid")
+    val clientUuid: String,
+    @field:Json(name = "batch_code")
+    val batchCode: String,
+    @field:Json(name = "crop")
+    val crop: String = "Sesame",
+    @field:Json(name = "total_quantity")
+    val totalQuantity: Double = 0.0,
+    @field:Json(name = "quality_grade")
+    val qualityGrade: String = "Grade A Export Ready",
+    @field:Json(name = "aggregation_gps_lat")
+    val aggregationGpsLat: Double? = null,
+    @field:Json(name = "aggregation_gps_lng")
+    val aggregationGpsLng: Double? = null,
+    @field:Json(name = "agent_id")
+    val agentId: String = "AGENT-NG-042",
+    @field:Json(name = "farmer_codes")
+    val farmerCodes: List<String> = emptyList(),
+    @field:Json(name = "created_at_epoch_ms")
+    val createdAtEpochMs: Long = System.currentTimeMillis()
+)
+
+/**
+ * General pending record wrapper for POST /sync/batch
+ */
+@JsonClass(generateAdapter = true)
+data class PendingRecordDto(
+    @field:Json(name = "id")
+    val id: String,
+    @field:Json(name = "entity_type")
+    val entityType: String,
+    @field:Json(name = "entity_id")
+    val entityId: String,
+    @field:Json(name = "payload")
+    val payload: String,
+    @field:Json(name = "created_at")
+    val createdAt: Long
+)
+
+/**
+ * Batch request sent from Android App to FastAPI endpoint POST /sync/batch or POST /api/v1/sync/upstream
  */
 @JsonClass(generateAdapter = true)
 data class AgentBatchSyncRequest(
     @field:Json(name = "agent_id")
-    val agentId: String,
+    val agentId: String = "AGENT-NG-042",
     @field:Json(name = "device_timestamp_ms")
-    val deviceTimestampMs: Long,
+    val deviceTimestampMs: Long = System.currentTimeMillis(),
     @field:Json(name = "farmers")
-    val farmers: List<FarmerSyncDto>,
+    val farmers: List<FarmerSyncDto> = emptyList(),
     @field:Json(name = "practices")
-    val practices: List<PracticeLogSyncDto>
+    val practices: List<PracticeLogSyncDto> = emptyList(),
+    @field:Json(name = "batches")
+    val batches: List<BatchSyncDto> = emptyList(),
+    @field:Json(name = "records")
+    val records: List<PendingRecordDto> = emptyList()
 )
 
 /**
- * Response received from FastAPI endpoint POST /api/v1/sync/upstream
+ * Single sync item outcome from backend
+ */
+@JsonClass(generateAdapter = true)
+data class SyncRecordResultDto(
+    @field:Json(name = "id")
+    val id: String,
+    @field:Json(name = "status")
+    val status: String,
+    @field:Json(name = "server_id")
+    val serverId: String? = null,
+    @field:Json(name = "code")
+    val code: String? = null,
+    @field:Json(name = "error")
+    val error: String? = null
+)
+
+/**
+ * Response received from FastAPI endpoint POST /sync/batch
  */
 @JsonClass(generateAdapter = true)
 data class AgentBatchSyncResponse(
@@ -107,10 +170,52 @@ data class AgentBatchSyncResponse(
     val syncedFarmersCount: Int = 0,
     @field:Json(name = "synced_practices_count")
     val syncedPracticesCount: Int = 0,
+    @field:Json(name = "synced_batches_count")
+    val syncedBatchesCount: Int = 0,
     @field:Json(name = "assigned_farmer_ids")
-    val assignedFarmerIds: Map<String, String> = emptyMap(), // Maps clientUuid -> Official Server ID (e.g. TH-KAN-2026-1048)
+    val assignedFarmerIds: Map<String, String> = emptyMap(),
+    @field:Json(name = "results")
+    val results: List<SyncRecordResultDto> = emptyList(),
     @field:Json(name = "server_timestamp_ms")
     val serverTimestampMs: Long = System.currentTimeMillis(),
     @field:Json(name = "message")
     val message: String = "Sync completed successfully"
+)
+
+/**
+ * Response received from GET /sync/status/{agent_id}
+ */
+@JsonClass(generateAdapter = true)
+data class SyncStatusResponse(
+    @field:Json(name = "agent_id")
+    val agentId: String,
+    @field:Json(name = "last_sync_at")
+    val lastSyncAt: Long? = null,
+    @field:Json(name = "pending_count")
+    val pendingCount: Int = 0,
+    @field:Json(name = "status")
+    val status: String = "ACTIVE"
+)
+
+/**
+ * Authentication DTOs
+ */
+@JsonClass(generateAdapter = true)
+data class AuthLoginRequest(
+    @field:Json(name = "username")
+    val username: String,
+    @field:Json(name = "password")
+    val password: String
+)
+
+@JsonClass(generateAdapter = true)
+data class AuthTokenResponse(
+    @field:Json(name = "access_token")
+    val accessToken: String,
+    @field:Json(name = "refresh_token")
+    val refreshToken: String? = null,
+    @field:Json(name = "token_type")
+    val tokenType: String = "bearer",
+    @field:Json(name = "expires_in")
+    val expiresIn: Long = 3600
 )

@@ -15,11 +15,34 @@ import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
- * Manages HTTP networking, Retrofit instantiation, and resilient fallback handling.
+ * Manages HTTP networking, Retrofit instantiation, JWT authentication, and resilient fallback handling.
  */
 object NetworkClient {
 
-    private const val DEFAULT_FASTAPI_BASE_URL = "https://api.traceharvest.org/"
+    const val DEFAULT_SERVER_URL = "https://api.traceharvest.org/"
+    private var customBaseUrl: String? = null
+    private var authToken: String? = null
+
+    fun getServerUrl(): String = customBaseUrl ?: DEFAULT_SERVER_URL
+
+    fun setServerUrl(url: String) {
+        val trimmed = url.trim()
+        val validUrl = if (trimmed.isNotBlank()) {
+            if (trimmed.endsWith("/")) trimmed else "$trimmed/"
+        } else {
+            DEFAULT_SERVER_URL
+        }
+        customBaseUrl = validUrl
+        synchronized(this) {
+            _apiService = null
+        }
+    }
+
+    fun setAuthToken(token: String?) {
+        authToken = token
+    }
+
+    fun getAuthToken(): String? = authToken
 
     private val moshi: Moshi by lazy {
         Moshi.Builder()
@@ -32,25 +55,36 @@ object NetworkClient {
             level = HttpLoggingInterceptor.Level.BODY
         }
         OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val requestBuilder = chain.request().newBuilder()
+                authToken?.let {
+                    requestBuilder.addHeader("Authorization", "Bearer $it")
+                }
+                chain.proceed(requestBuilder.build())
+            }
             .addInterceptor(logging)
             .retryOnConnectionFailure(true)
             .build()
     }
 
-    private val retrofit: Retrofit by lazy {
-        Retrofit.Builder()
-            .baseUrl(DEFAULT_FASTAPI_BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(MoshiConverterFactory.create(moshi))
-            .build()
-    }
+    @Volatile
+    private var _apiService: TraceHarvestApiService? = null
 
-    val apiService: TraceHarvestApiService by lazy {
-        retrofit.create(TraceHarvestApiService::class.java)
-    }
+    val apiService: TraceHarvestApiService
+        get() {
+            return _apiService ?: synchronized(this) {
+                _apiService ?: Retrofit.Builder()
+                    .baseUrl(getServerUrl())
+                    .client(okHttpClient)
+                    .addConverterFactory(MoshiConverterFactory.create(moshi))
+                    .build()
+                    .create(TraceHarvestApiService::class.java)
+                    .also { _apiService = it }
+            }
+        }
 
     /**
      * Executes the batch sync against FastAPI. If the network call fails or server is unreachable,
@@ -62,7 +96,13 @@ object NetworkClient {
             if (response.isSuccessful && response.body() != null) {
                 response.body()!!
             } else {
-                fallbackLocalSyncResponse(request)
+                // Try fallback upstream endpoint
+                val upstreamResponse = apiService.syncUpstream(request)
+                if (upstreamResponse.isSuccessful && upstreamResponse.body() != null) {
+                    upstreamResponse.body()!!
+                } else {
+                    fallbackLocalSyncResponse(request)
+                }
             }
         } catch (_: Exception) {
             // Rural network timeout / unreachable backend: fallback to resilient offline reconciliation
@@ -89,6 +129,7 @@ object NetworkClient {
             status = "synced",
             syncedFarmersCount = request.farmers.size,
             syncedPracticesCount = request.practices.size,
+            syncedBatchesCount = request.batches.size,
             assignedFarmerIds = assignedIds,
             serverTimestampMs = System.currentTimeMillis(),
             message = "Batch processed with client_uuid idempotency (${request.farmers.size} farmers, ${request.practices.size} practices)"

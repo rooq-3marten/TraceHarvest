@@ -471,4 +471,42 @@ class AppStressTest {
             assertTrue(finalFarmers.size >= totalOperations)
         }
     }
+
+    // =========================================================================
+    // 8. PHYSICAL LOCATION REVERSE GEOCODING & SPATIAL LANDMARK RESOLUTION
+    // =========================================================================
+
+    @Test
+    fun `verify geographical coordinates resolve to physically named locations`() {
+        runBlocking {
+            val context = ApplicationProvider.getApplicationContext<Context>()
+
+            // Test Kano Dambatta Sesame hub coordinates (12.4382, 8.5147)
+            val dambattaName = com.example.core.location.GeoLocationNamingService.resolveLocationName(
+                context = context,
+                latitude = 12.4382,
+                longitude = 8.5147,
+                fallbackState = "Kano",
+                fallbackLga = "Dambatta",
+                fallbackCommunity = "Gwarabjawa"
+            )
+            assertTrue("Should contain Dambatta or Kano", dambattaName.contains("Dambatta") || dambattaName.contains("Kano"))
+
+            // Test Jigawa Maigatari export border hub coordinates (12.8622, 9.9078)
+            val maigatariName = com.example.core.location.GeoLocationNamingService.resolveLocationName(
+                context = context,
+                latitude = 12.8622,
+                longitude = 9.9078,
+                fallbackState = "Jigawa",
+                fallbackLga = "Maigatari"
+            )
+            assertTrue("Should contain Maigatari or Jigawa", maigatariName.contains("Maigatari") || maigatariName.contains("Jigawa"))
+
+            // Test nearest hub calculation
+            val nearest = com.example.core.location.GeoLocationNamingService.findNearestHub(11.0855, 7.7199)
+            assertNotNull(nearest)
+            assertEquals("Zaria Agricultural Research Basin", nearest!!.first.name)
+            assertEquals("Kaduna", nearest.first.state)
+        }
+    }
 }
