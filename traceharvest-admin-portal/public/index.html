@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TraceHarvest | Central Export Registry & Admin Oversight Portal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- Top Navbar -->
+  <header class="bg-slate-950/80 backdrop-blur border-b border-emerald-900/40 sticky top-0 z-50 px-6 py-3.5">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-950">
+          <span class="text-xl">🌾</span>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-lg font-bold text-white tracking-tight">TraceHarvest</h1>
+            <span class="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded font-mono font-medium border border-emerald-500/30">ADMIN OVERSIGHT</span>
+          </div>
+          <p class="text-xs text-slate-400">Export Provenance & NAFDAC Agrochemical Compliance Central Registry</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-4">
+        <!-- Live Connection Status -->
+        <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs">
+          <span class="relative flex h-2.5 w-2.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span class="text-slate-300 font-medium">Sync Ingestion Active</span>
+          <span id="last-sync-time" class="text-slate-400 font-mono text-[11px]">(Listening...)</span>
+        </div>
+
+        <!-- Mobile Link Modal Button -->
+        <button onclick="openModal('link-modal')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center space-x-1.5 transition shadow">
+          <span>📱</span>
+          <span>Link Mobile App</span>
+        </button>
+
+        <a href="/api/v1/admin/export/csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1 transition">
+          <span>📥</span>
+          <span>Export CSV</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto w-full p-6 flex-1 space-y-6">
+
+    <!-- KPI Summary Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 shadow-sm relative overflow-hidden">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Registered Smallholders</div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span id="kpi-farmers" class="text-3xl font-extrabold text-white">0</span>
+          <span class="text-xs text-emerald-400">GPS Verified</span>
+        </div>
+        <div class="text-[11px] text-slate-400 mt-1">Unique KYC & Biometric IDs</div>
+        <div class="absolute -right-2 -bottom-2 text-4xl opacity-10">👨‍🌾</div>
+      </div>
+
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 shadow-sm relative overflow-hidden">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Audited Farm Land</div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span id="kpi-hectares" class="text-3xl font-extrabold text-emerald-400">0.0</span>
+          <span class="text-xs text-slate-300">Hectares</span>
+        </div>
+        <div class="text-[11px] text-slate-400 mt-1">EUDR Deforestation-Compliant</div>
+        <div class="absolute -right-2 -bottom-2 text-4xl opacity-10">🗺️</div>
+      </div>
+
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 shadow-sm relative overflow-hidden">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">NAFDAC Compliance Rate</div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span id="kpi-compliance-rate" class="text-3xl font-extrabold text-teal-300">100%</span>
+          <span class="text-xs text-emerald-400">GAP Certified</span>
+        </div>
+        <div class="text-[11px] text-slate-400 mt-1"><span id="kpi-phi-holds" class="text-amber-400">0</span> Active PHI Withholding Holds</div>
+        <div class="absolute -right-2 -bottom-2 text-4xl opacity-10">🧪</div>
+      </div>
+
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 shadow-sm relative overflow-hidden">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Export Batches Ready</div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span id="kpi-batches" class="text-3xl font-extrabold text-amber-300">0</span>
+          <span class="text-xs text-slate-300">Consignments</span>
+        </div>
+        <div class="text-[11px] text-slate-400 mt-1">Cryptographic QR Passports</div>
+        <div class="absolute -right-2 -bottom-2 text-4xl opacity-10">🚢</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="flex items-center space-x-2 border-b border-slate-800">
+      <button onclick="switchTab('map-tab')" id="tab-btn-map" class="tab-btn active px-4 py-2 text-sm font-semibold text-emerald-400 border-b-2 border-emerald-400">
+        🗺️ GIS Farm Plots & Spatial Clusters
+      </button>
+      <button onclick="switchTab('farmers-tab')" id="tab-btn-farmers" class="tab-btn px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">
+        👨‍🌾 Synced Farmers Registry
+      </button>
+      <button onclick="switchTab('compliance-tab')" id="tab-btn-compliance" class="tab-btn px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">
+        🧪 NAFDAC Agrochemical & PHI Sentinel
+      </button>
+      <button onclick="switchTab('batches-tab')" id="tab-btn-batches" class="tab-btn px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">
+        🚢 Export Consignment Batches
+      </button>
+    </div>
+
+    <!-- Tab 1: GIS Map -->
+    <div id="tab-map" class="tab-content space-y-4">
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-3">
+          <div>
+            <h2 class="text-sm font-bold text-white">Satellite Farm Georeference (Nigeria Agricultural Belt)</h2>
+            <p class="text-xs text-slate-400">Displays real-time farm plot polygons, centroids, and cluster distributions from synced field agents.</p>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="inline-block w-3 h-3 rounded-full bg-emerald-500"></span>
+            <span class="text-slate-300">Sesame</span>
+            <span class="inline-block w-3 h-3 rounded-full bg-amber-500 ml-2"></span>
+            <span class="text-slate-300">Cowpea</span>
+            <span class="inline-block w-3 h-3 rounded-full bg-orange-500 ml-2"></span>
+            <span class="text-slate-300">Ginger</span>
+          </div>
+        </div>
+        <div id="gis-map" class="w-full h-[520px] rounded-lg overflow-hidden border border-slate-700/80"></div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Farmers Registry -->
+    <div id="tab-farmers" class="tab-content hidden space-y-4">
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div class="flex items-center space-x-2 flex-1 max-w-md">
+            <input type="text" id="farmer-search" placeholder="Search by name, ID (e.g. TH-KAN-2026), or phone..." 
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <select id="state-filter" class="bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2">
+              <option value="ALL">All States</option>
+              <option value="Kano">Kano</option>
+              <option value="Jigawa">Jigawa</option>
+              <option value="Kaduna">Kaduna</option>
+              <option value="Benue">Benue</option>
+            </select>
+            <select id="crop-filter" class="bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2">
+              <option value="ALL">All Crops</option>
+              <option value="Sesame">Sesame</option>
+              <option value="Cowpea">Cowpea</option>
+              <option value="Ginger">Ginger</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-900/80 uppercase text-[10px] text-slate-400 font-semibold tracking-wider border-b border-slate-700">
+              <tr>
+                <th class="p-3">Official Farmer ID</th>
+                <th class="p-3">Full Name</th>
+                <th class="p-3">State & LGA</th>
+                <th class="p-3">Crop</th>
+                <th class="p-3">Farm Size</th>
+                <th class="p-3">GPS Centroid</th>
+                <th class="p-3">Agent</th>
+                <th class="p-3">Status</th>
+              </tr>
+            </thead>
+            <tbody id="farmers-table-body" class="divide-y divide-slate-800">
+              <tr>
+                <td colspan="8" class="p-6 text-center text-slate-500">Awaiting sync from mobile apps. Enroll a farmer in the Android app and tap 'Sync Now'.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: NAFDAC Compliance Sentinel -->
+    <div id="tab-compliance" class="tab-content hidden space-y-4">
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4">
+        <div class="mb-4">
+          <h2 class="text-sm font-bold text-white">NAFDAC Agrochemical Application Audit Trail</h2>
+          <p class="text-xs text-slate-400">Verifies maximum residue limits (MRL) and enforces pre-harvest intervals (PHI) before export clearance.</p>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-900/80 uppercase text-[10px] text-slate-400 font-semibold tracking-wider border-b border-slate-700">
+              <tr>
+                <th class="p-3">Farmer Code</th>
+                <th class="p-3">Practice / Type</th>
+                <th class="p-3">Product Name</th>
+                <th class="p-3">Active Ingredient</th>
+                <th class="p-3">NAFDAC Reg. No</th>
+                <th class="p-3">Dosage</th>
+                <th class="p-3">PHI Status</th>
+                <th class="p-3">Compliance Verdict</th>
+              </tr>
+            </thead>
+            <tbody id="compliance-table-body" class="divide-y divide-slate-800">
+              <tr>
+                <td colspan="8" class="p-6 text-center text-slate-500">No practice logs synced yet. Log a spray or fertilizer practice on the mobile app to audit.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Export Batches -->
+    <div id="tab-batches" class="tab-content hidden space-y-4">
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-white">Consolidated Export Shipping Batches</h2>
+            <p class="text-xs text-slate-400">Cryptographically sealed container consignments with verifiable EUDR/FDA export passports.</p>
+          </div>
+          <button onclick="createNewBatch()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center space-x-1.5 transition">
+            <span>+</span>
+            <span>Create New Batch</span>
+          </button>
+        </div>
+
+        <div id="batches-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Mobile App Linking -->
+  <div id="link-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative space-y-4">
+      <button onclick="closeModal('link-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">✕</button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-600/30 text-emerald-400 flex items-center justify-center text-xl">📱</div>
+        <div>
+          <h3 class="text-base font-bold text-white">Link Mobile App to This Website</h3>
+          <p class="text-xs text-slate-400">Step-by-step synchronization handshake</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+        <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Your Admin API Base URL:</div>
+        <div class="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-lg border border-emerald-500/40">
+          <code id="server-url-display" class="font-mono text-emerald-400 text-xs font-bold">http://10.0.2.2:8000/</code>
+          <button onclick="copyServerUrl()" class="text-xs text-slate-300 hover:text-white bg-slate-800 px-2 py-1 rounded">Copy</button>
+        </div>
+      </div>
+
+      <ol class="space-y-3 text-xs text-slate-300 list-decimal list-inside leading-relaxed">
+        <li>Open the <strong>TraceHarvest Mobile App</strong> on your Android device.</li>
+        <li>Tap the <strong>Sync Tab</strong> in the bottom navigation.</li>
+        <li>In the <strong>Admin Website Connection</strong> card, tap <strong>Configure</strong>.</li>
+        <li>Paste or enter the URL above and tap <strong>Save Endpoint</strong>.</li>
+        <li>Tap <strong>Sync Now</strong> — records will immediately appear here!</li>
+      </ol>
+
+      <div class="text-[11px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg">
+        💡 <strong>Rural Offline Support:</strong> If agents are in areas without cellular coverage, records queue safely in their phone's local SQLite database. Once back in range, tapping sync uploads the backlog without duplicates.
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
