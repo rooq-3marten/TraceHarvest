@@ -74,12 +74,17 @@ fun AdvancedGpsPolygonCaptureCard(
 
         if (isLiveTracking && lm != null) {
             try {
+                // Adaptive interval: 2.5s on budget/low-RAM devices to prevent thermal throttling, 1.5s on standard
+                val isLowRam = com.example.core.resilience.DeviceHardeningManager.isLowRamDevice(context)
+                val updateIntervalMs = if (isLowRam) 2500L else 1500L
+                val minDistanceM = if (isLowRam) 1.5f else 1.0f
+
                 // Request updates from GPS provider first, falling back to network
                 if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0.5f, listener)
+                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, updateIntervalMs, minDistanceM, listener)
                 }
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 0.5f, listener)
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, updateIntervalMs, minDistanceM, listener)
                 }
             } catch (_: SecurityException) {}
         }

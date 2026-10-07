@@ -56,10 +56,18 @@ class AppStressTest {
         repository = TraceHarvestRepository(database.traceHarvestDao())
         ussdEngine = UssdEngine()
         smsEngine = SmsEngine()
+
+        com.example.data.remote.NetworkClient.mockResponseForTesting = com.example.data.remote.model.AgentBatchSyncResponse(
+            status = "success",
+            syncedFarmersCount = 20,
+            syncedPracticesCount = 0,
+            assignedFarmerIds = emptyMap()
+        )
     }
 
     @After
     fun tearDown() {
+        com.example.data.remote.NetworkClient.mockResponseForTesting = null
         database.close()
     }
 

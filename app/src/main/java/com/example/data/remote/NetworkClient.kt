@@ -49,14 +49,15 @@ object NetworkClient {
 
     private val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.BASIC // Low memory overhead on budget processors
         }
         OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(35, TimeUnit.SECONDS) // Accommodates 2G/EDGE cellular handshake
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(45, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val requestBuilder = chain.request().newBuilder()
+                    .addHeader("Accept-Encoding", "gzip")
                 authToken?.let {
                     requestBuilder.addHeader("Authorization", "Bearer $it")
                 }
@@ -84,10 +85,18 @@ object NetworkClient {
         }
 
     /**
+     * Optional mock response hook for offline unit and JVM Robolectric testing.
+     */
+    @Volatile
+    var mockResponseForTesting: AgentBatchSyncResponse? = null
+
+    /**
      * Executes the batch sync against FastAPI. Returns null when the server is unreachable
      * or rejects the request, so records stay pending and retry later (no fake "synced").
      */
     suspend fun executeResilientBatchSync(request: AgentBatchSyncRequest): AgentBatchSyncResponse? {
+        mockResponseForTesting?.let { return it }
+
         return try {
             val response = apiService.syncBatch(request)
             if (response.isSuccessful && response.body() != null) {

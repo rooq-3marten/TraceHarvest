@@ -37,6 +37,9 @@ import com.example.core.zone.ZoneRegistry
 import com.example.data.local.entity.FarmerEntity
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Screen 4: Human-Centered Smallholder Enrollment
@@ -130,13 +133,27 @@ fun EnrollFarmerScreen(
     var photoUri by remember { mutableStateOf<Uri?>(null) }
     var showConsentDialog by remember { mutableStateOf(false) }
     var hasPhotoConsent by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            photoUri = uri
-            hasPhotoConsent = true
+            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val compressed = com.example.core.resilience.SafeBitmapUtil.compressAndSavePhoto(
+                    context = context,
+                    sourceUri = uri,
+                    destFileName = "farmer_${System.currentTimeMillis()}.jpg"
+                )
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    if (compressed != null) {
+                        photoUri = Uri.fromFile(compressed)
+                    } else {
+                        photoUri = uri
+                    }
+                    hasPhotoConsent = true
+                }
+            }
         }
     }
 

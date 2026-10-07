@@ -79,11 +79,15 @@ fun GoogleSatelliteFarmMap(
 
         if (isWalkTrackingActive && lm != null) {
             try {
+                val isLowRam = com.example.core.resilience.DeviceHardeningManager.isLowRamDevice(context)
+                val intervalMs = if (isLowRam) 2500L else 1500L
+                val distanceM = if (isLowRam) 1.5f else 1.0f
+
                 if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0.5f, listener)
+                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, intervalMs, distanceM, listener)
                 }
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 0.5f, listener)
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, intervalMs, distanceM, listener)
                 }
             } catch (_: SecurityException) {}
         }

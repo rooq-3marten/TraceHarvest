@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +52,23 @@ fun FarmerAvatarView(
     size: Dp = 56.dp,
     gender: String = "MALE" // "MALE" or "FEMALE"
 ) {
-    val localFile = photoPath?.let { File(it) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isLowRam = remember { com.example.core.resilience.DeviceHardeningManager.isLowRamDevice(context) }
+    val localFile: File? = remember(photoPath) { photoPath?.let { File(it) } }
+
+    val bitmap: Bitmap? = remember(photoPath, size) {
+        if (localFile != null && localFile.exists()) {
+            val targetPx = if (isLowRam) 120 else 240
+            com.example.core.resilience.SafeBitmapUtil.decodeSampledBitmap(
+                file = localFile,
+                targetWidth = targetPx,
+                targetHeight = targetPx,
+                isLowRamDevice = isLowRam
+            )
+        } else {
+            null
+        }
+    }
 
     Box(
         modifier = modifier
@@ -61,18 +78,13 @@ fun FarmerAvatarView(
             .background(SoftCreamSurface),
         contentAlignment = Alignment.Center
     ) {
-        if (localFile != null && localFile.exists()) {
-            val bitmap = BitmapFactory.decodeFile(localFile.absolutePath)
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Photo of $farmerName",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                ZoneIllustratedAvatarCanvas(zone, gender, farmerName)
-            }
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Photo of $farmerName",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
             ZoneIllustratedAvatarCanvas(zone, gender, farmerName)
         }
