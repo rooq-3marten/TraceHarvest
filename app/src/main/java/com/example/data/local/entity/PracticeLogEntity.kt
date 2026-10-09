@@ -1,10 +1,19 @@
 package com.example.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "practice_logs")
+@Entity(
+    tableName = "practice_logs",
+    indices = [
+        Index("farmerId"),
+        Index("syncStatus"),
+        Index("farmerCode"),
+        Index("logDate")
+    ]
+)
 data class PracticeLogEntity(
     @PrimaryKey
     val localId: String = UUID.randomUUID().toString(),

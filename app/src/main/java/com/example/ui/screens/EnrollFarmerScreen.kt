@@ -159,6 +159,8 @@ fun EnrollFarmerScreen(
 
     var isOfflineMode by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
     var enrolledFarmersExpanded by remember { mutableStateOf(false) }
 
     // Auto resolve physical location name
@@ -606,12 +608,43 @@ fun EnrollFarmerScreen(
 
                     // Error message
                     errorMessage?.let { err ->
-                        Text(err, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
                     }
 
-                    // Submit Button: Warm, human copy
+                    // Success message
+                    successMessage?.let { success ->
+                        Surface(
+                            color = ForestGreenContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = success,
+                                color = ForestGreenDark,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+
+                    // Submit Button: Warm, human copy, disabled while saving
                     Button(
                         onClick = {
+                            errorMessage = null
+                            successMessage = null
+
                             if (fullName.isBlank()) {
                                 errorMessage = "Please enter the farmer's full name"
                                 return@Button
@@ -621,12 +654,37 @@ fun EnrollFarmerScreen(
                                 return@Button
                             }
 
-                            val cleanPhone = phoneNumber.trim()
-                            val parsedSize = farmSizeStr.toDoubleOrNull() ?: 1.0
-                            val cleanCommunity = if (community.isBlank()) "$selectedLga Farming Cluster" else community
+                            val cleanPhone = phoneNumber.trim().replace(" ", "").replace("-", "")
+                            val isValidPhone = (cleanPhone.startsWith("+234") && cleanPhone.length in 13..14) ||
+                                    (cleanPhone.startsWith("234") && cleanPhone.length in 12..13) ||
+                                    (cleanPhone.startsWith("0") && cleanPhone.length in 10..11)
+                            if (!isValidPhone) {
+                                errorMessage = "Please enter a valid Nigerian phone number (e.g. +234 803 123 4567)"
+                                return@Button
+                            }
 
+                            // Duplicate farmer detection by phone number
+                            val isDuplicate = enrolledFarmers.any { existing ->
+                                val existingClean = existing.phoneNumber.replace(" ", "").replace("-", "")
+                                existingClean == cleanPhone || (existingClean.endsWith(cleanPhone.takeLast(10)))
+                            }
+                            if (isDuplicate) {
+                                errorMessage = "A farmer with this phone number is already registered in this cluster"
+                                return@Button
+                            }
+
+                            val parsedSize = farmSizeStr.toDoubleOrNull() ?: 0.0
+                            if (parsedSize <= 0.0) {
+                                errorMessage = "Farm size must be greater than 0"
+                                return@Button
+                            }
+
+                            val cleanCommunity = if (community.isBlank()) "$selectedLga Farming Cluster" else community.trim()
+                            val registeredName = fullName.trim()
+
+                            isSaving = true
                             onRegisterFarmer(
-                                fullName.trim(),
+                                registeredName,
                                 cleanPhone,
                                 selectedState,
                                 selectedLga,
@@ -639,22 +697,42 @@ fun EnrollFarmerScreen(
                                 selectedCooperative,
                                 isOfflineMode
                             )
+
+                            // Clear inputs on success and show warm feedback
+                            fullName = ""
+                            phoneNumber = ""
+                            community = ""
+                            polygonVertices = emptyList()
+                            photoUri = null
+                            isSaving = false
+                            successMessage = "Farmer $registeredName registered offline and queued for synchronization!"
                         },
+                        enabled = !isSaving,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
                             .testTag("submit_enroll_button"),
                         shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = LateriteRedPrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGreenPrimary)
                     ) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Save this farmer's details",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Saving farmer...", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        } else {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Save this farmer's details",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -677,13 +755,13 @@ fun EnrollFarmerScreen(
             if (enrolledFarmers.isEmpty()) {
                 item {
                     Text(
-                        text = "Nothing here yet. Registered farmers will appear in this list.",
+                        text = "No farmers registered yet. Use the form above to enroll a smallholder.",
                         fontSize = 12.sp,
                         color = MutedBrownText
                     )
                 }
             } else {
-                items(enrolledFarmers) { farmer ->
+                items(enrolledFarmers, key = { it.localId }) { farmer ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),

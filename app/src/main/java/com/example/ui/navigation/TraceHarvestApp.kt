@@ -1,5 +1,6 @@
 package com.example.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -12,21 +13,45 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.core.auth.SessionManager
 import com.example.core.zone.GeopoliticalZone
 import com.example.core.zone.ZoneRegistry
+import com.example.data.remote.NetworkClient
 import com.example.ui.components.AppGuideDialog
 import com.example.ui.components.FarmVertex
 import com.example.ui.screens.*
 import com.example.ui.theme.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.core.auth.AgentApprovalStatus
+import com.example.core.auth.AgentProfile
+import com.example.ui.viewmodel.AgentAuthViewModel
 import com.example.ui.viewmodel.AppTab
 import com.example.ui.viewmodel.TraceHarvestViewModel
+import kotlinx.coroutines.launch
+
+enum class AppNavState {
+    SPLASH,
+    LOGIN,
+    SIGN_UP,
+    PENDING_APPROVAL,
+    REJECTED,
+    SUSPENDED,
+    MAIN
+}
 
 data class FarmMapTarget(
     val initialLat: Double,
@@ -36,11 +61,13 @@ data class FarmMapTarget(
 )
 
 /**
- * Human-Centered Field Agent Application Architecture.
- * Supports:
- * - 6 Geopolitical Zones configuration & switching
- * - Google Satellite Imagery farm boundary mapping & WKT export
- * - Ethical farmer avatar system (zero AI stock faces)
+ * Human-Centered Field Agent Application Architecture with Authentication Gate:
+ * - Splash Screen (1.5 seconds) with DataStore JWT token validation & approval check
+ * - Self-registration screen for new agents
+ * - Approval status routing (pending, approved, rejected, suspended)
+ * - Lifecycle foreground status check
+ * - Lands on Home with "Register a farmer" as the prominent primary action
+ * - BackHandler on all sub-screens to prevent accidental exits
  * - Offline-first synchronization with the Central Admin Dashboard
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,21 +76,207 @@ fun TraceHarvestApp(
     viewModel: TraceHarvestViewModel,
     modifier: Modifier = Modifier
 ) {
-    val selectedTab by viewModel.selectedTab.collectAsState()
-    val currentZone by viewModel.currentZone.collectAsState()
-    val farmers by viewModel.allFarmers.collectAsState()
-    val practiceLogs by viewModel.allPracticeLogs.collectAsState()
-    val batches by viewModel.allBatches.collectAsState()
-    val userMessage by viewModel.userMessage.collectAsState()
-    val pendingFarmerCount by viewModel.pendingFarmerSyncCount.collectAsState()
-    val pendingPracticeCount by viewModel.pendingPracticeSyncCount.collectAsState()
-    val totalPendingCount by viewModel.totalPendingSyncCount.collectAsState()
-    val isSyncing by viewModel.isSyncing.collectAsState()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
+    val sessionManager = remember { SessionManager.getInstance(context) }
+    val authViewModel: AgentAuthViewModel = viewModel()
+
+    var appNavState by rememberSaveable { mutableStateOf(AppNavState.SPLASH) }
+    var currentAgentProfile by remember { mutableStateOf(AgentProfile()) }
+
+    // Collect profile updates from SessionManager
+    LaunchedEffect(Unit) {
+        sessionManager.agentProfileFlow.collect { profile ->
+            currentAgentProfile = profile
+        }
+    }
+
+    // Lifecycle Guard: Re-check approval status whenever app returns to foreground (ON_RESUME)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch {
+                    if (sessionManager.hasValidSession()) {
+                        authViewModel.refreshAgentStatus { status ->
+                            when (status) {
+                                AgentApprovalStatus.APPROVED -> {
+                                    if (appNavState in listOf(AppNavState.PENDING_APPROVAL, AppNavState.REJECTED, AppNavState.SUSPENDED)) {
+                                        appNavState = AppNavState.MAIN
+                                    }
+                                }
+                                AgentApprovalStatus.PENDING -> {
+                                    appNavState = AppNavState.PENDING_APPROVAL
+                                }
+                                AgentApprovalStatus.REJECTED -> {
+                                    appNavState = AppNavState.REJECTED
+                                }
+                                AgentApprovalStatus.SUSPENDED -> {
+                                    appNavState = AppNavState.SUSPENDED
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    when (appNavState) {
+        AppNavState.SPLASH -> {
+            SplashScreen(
+                onNavigateToHome = {
+                    appNavState = AppNavState.MAIN
+                    viewModel.selectTab(AppTab.HOME_DASHBOARD)
+                },
+                onNavigateToLogin = {
+                    appNavState = AppNavState.LOGIN
+                },
+                onNavigateToStatus = { status, profile ->
+                    currentAgentProfile = profile
+                    appNavState = when (status) {
+                        AgentApprovalStatus.APPROVED -> AppNavState.MAIN
+                        AgentApprovalStatus.PENDING -> AppNavState.PENDING_APPROVAL
+                        AgentApprovalStatus.REJECTED -> AppNavState.REJECTED
+                        AgentApprovalStatus.SUSPENDED -> AppNavState.SUSPENDED
+                    }
+                },
+                modifier = modifier
+            )
+            return
+        }
+
+        AppNavState.LOGIN -> {
+            AgentLoginScreen(
+                authViewModel = authViewModel,
+                onNavigateToSignUp = {
+                    appNavState = AppNavState.SIGN_UP
+                },
+                onRouteByStatus = { status, profile ->
+                    currentAgentProfile = profile
+                    when (status) {
+                        AgentApprovalStatus.APPROVED -> {
+                            appNavState = AppNavState.MAIN
+                            viewModel.selectTab(AppTab.HOME_DASHBOARD)
+                        }
+                        AgentApprovalStatus.PENDING -> {
+                            appNavState = AppNavState.PENDING_APPROVAL
+                        }
+                        AgentApprovalStatus.REJECTED -> {
+                            appNavState = AppNavState.REJECTED
+                        }
+                        AgentApprovalStatus.SUSPENDED -> {
+                            appNavState = AppNavState.SUSPENDED
+                        }
+                    }
+                },
+                modifier = modifier
+            )
+            return
+        }
+
+        AppNavState.SIGN_UP -> {
+            BackHandler {
+                appNavState = AppNavState.LOGIN
+            }
+            AgentSignUpScreen(
+                authViewModel = authViewModel,
+                onNavigateBackToSignIn = {
+                    appNavState = AppNavState.LOGIN
+                },
+                onSignUpSuccessPending = {
+                    appNavState = AppNavState.PENDING_APPROVAL
+                },
+                modifier = modifier
+            )
+            return
+        }
+
+        AppNavState.PENDING_APPROVAL -> {
+            BackHandler {
+                appNavState = AppNavState.LOGIN
+            }
+            AgentPendingApprovalScreen(
+                authViewModel = authViewModel,
+                profile = currentAgentProfile,
+                onApproved = {
+                    appNavState = AppNavState.MAIN
+                    viewModel.selectTab(AppTab.HOME_DASHBOARD)
+                },
+                onSignOut = {
+                    authViewModel.signOut {
+                        appNavState = AppNavState.LOGIN
+                    }
+                },
+                modifier = modifier
+            )
+            return
+        }
+
+        AppNavState.REJECTED -> {
+            BackHandler {
+                appNavState = AppNavState.LOGIN
+            }
+            AgentRejectedScreen(
+                authViewModel = authViewModel,
+                profile = currentAgentProfile,
+                onResubmitted = {
+                    appNavState = AppNavState.PENDING_APPROVAL
+                },
+                onSignOut = {
+                    authViewModel.signOut {
+                        appNavState = AppNavState.LOGIN
+                    }
+                },
+                modifier = modifier
+            )
+            return
+        }
+
+        AppNavState.SUSPENDED -> {
+            BackHandler {
+                // Suspended agents cannot back into the app
+            }
+            AgentSuspendedScreen(
+                profile = currentAgentProfile,
+                onSignOut = {
+                    authViewModel.signOut {
+                        appNavState = AppNavState.LOGIN
+                    }
+                },
+                modifier = modifier
+            )
+            return
+        }
+
+        AppNavState.MAIN -> {
+            // Main App Flow below
+        }
+    }
+
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val currentZone by viewModel.currentZone.collectAsStateWithLifecycle()
+    val farmers by viewModel.allFarmers.collectAsStateWithLifecycle()
+    val practiceLogs by viewModel.allPracticeLogs.collectAsStateWithLifecycle()
+    val batches by viewModel.allBatches.collectAsStateWithLifecycle()
+    val userMessage by viewModel.userMessage.collectAsStateWithLifecycle()
+    val pendingFarmerCount by viewModel.pendingFarmerSyncCount.collectAsStateWithLifecycle()
+    val pendingPracticeCount by viewModel.pendingPracticeSyncCount.collectAsStateWithLifecycle()
+    val totalPendingCount by viewModel.totalPendingSyncCount.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
 
     var showGuideDialog by remember { mutableStateOf(false) }
     var activeMapTarget by remember { mutableStateOf<FarmMapTarget?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val zoneProfile = remember(currentZone) { ZoneRegistry.getProfile(currentZone) }
+
+    // Intercept back key: when on secondary tab, back key returns to HOME_DASHBOARD
+    BackHandler(enabled = selectedTab != AppTab.HOME_DASHBOARD) {
+        viewModel.selectTab(AppTab.HOME_DASHBOARD)
+    }
 
     LaunchedEffect(userMessage) {
         userMessage?.let {
@@ -79,9 +292,8 @@ fun TraceHarvestApp(
             initialLng = target.initialLng,
             cropType = target.crop,
             farmerName = target.farmerName,
-            onBoundarySaved = { wkt, areaHa, vertices ->
+            onBoundarySaved = { _, _, _ ->
                 activeMapTarget = null
-                // Return to enrollment screen with saved polygon
             },
             onCancel = { activeMapTarget = null }
         )
@@ -148,7 +360,9 @@ fun TraceHarvestApp(
                             }
                             AppTab.HOME_DASHBOARD -> {
                                 HomeDashboardScreen(
-                                    agentName = "Aminu Bello",
+                                    agentName = currentAgentProfile.name.ifBlank { "Aminu Bello" },
+                                    agentAssociation = currentAgentProfile.association.ifBlank { "Kano Rice & Grains Cooperative" },
+                                    agentLocation = currentAgentProfile.location.ifBlank { "Dambatta, Kano State" },
                                     currentZone = currentZone,
                                     totalFarmersCount = farmers.size,
                                     totalPracticesCount = practiceLogs.size,
@@ -234,10 +448,16 @@ fun TraceHarvestApp(
                             AppTab.SETTINGS -> {
                                 SettingsScreen(
                                     currentZone = currentZone,
-                                    agentName = "Aminu Bello Dambatta",
-                                    agentPhone = "+2348031234567",
+                                    agentName = currentAgentProfile.name.ifBlank { "Aminu Bello Dambatta" },
+                                    agentPhone = currentAgentProfile.phone.ifBlank { "+2348031234567" },
                                     onSwitchZone = { viewModel.selectTab(AppTab.ZONE_SELECTION) },
-                                    onLogout = { viewModel.selectTab(AppTab.ZONE_SELECTION) },
+                                    onLogout = {
+                                        coroutineScope.launch {
+                                            authViewModel.signOut {
+                                                appNavState = AppNavState.LOGIN
+                                            }
+                                        }
+                                    },
                                     onNavigateBack = { viewModel.selectTab(AppTab.HOME_DASHBOARD) }
                                 )
                             }
@@ -333,6 +553,7 @@ private fun TraceHarvestTopBar(
                 modifier = Modifier
                     .padding(end = 6.dp)
                     .clickable(enabled = !isSyncing && totalPending > 0) { onSyncClick() }
+                    .testTag("topbar_sync_badge")
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

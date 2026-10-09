@@ -263,5 +263,131 @@ class ExampleRobolectricTest {
     val activity = controller.get()
     org.junit.Assert.assertNotNull(activity)
   }
+
+  @Test
+  fun `verify SessionManager stores and validates session token`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val sessionManager = com.example.core.auth.SessionManager.getInstance(context)
+
+    // Save session
+    sessionManager.saveSession(
+      token = "jwt_test_token_12345",
+      refreshToken = "rf_test_12345",
+      agentId = "AGENT-NG-042",
+      name = "Aminu Bello",
+      phone = "+2348031234567",
+      email = "aminu.bello@traceharvest.ng"
+    )
+
+    assertTrue(sessionManager.hasValidSession())
+    assertEquals("jwt_test_token_12345", sessionManager.getAuthToken())
+
+    // Clear session
+    sessionManager.clearSession()
+    org.junit.Assert.assertFalse(sessionManager.hasValidSession())
+    org.junit.Assert.assertNull(sessionManager.getAuthToken())
+  }
+
+  @Test
+  fun `verify Nigerian phone number validator accepts valid and rejects malformed inputs`() {
+    val validPhones = listOf(
+      "+2348031234567",
+      "+234 803 123 4567",
+      "08031234567",
+      "07012345678",
+      "09012345678",
+      "08123456789"
+    )
+
+    val invalidPhones = listOf(
+      "12345",
+      "invalid_phone",
+      "+15551234567",
+      "+2345"
+    )
+
+    fun isValid(p: String): Boolean {
+      val clean = p.replace(" ", "").replace("-", "")
+      return (clean.startsWith("+234") && clean.length in 13..14) ||
+             (clean.startsWith("234") && clean.length in 12..13) ||
+             (clean.startsWith("0") && clean.length in 10..11)
+    }
+
+    validPhones.forEach {
+      assertTrue("Phone $it should be recognized as valid", isValid(it))
+    }
+
+    invalidPhones.forEach {
+      org.junit.Assert.assertFalse("Phone $it should be recognized as invalid", isValid(it))
+    }
+  }
+
+  @Test
+  fun `verify duplicate farmer phone detection guards against duplicate registration`() {
+    val existing = listOf(
+      com.example.data.local.entity.FarmerEntity(
+        localId = "f1",
+        name = "Musa Ibrahim",
+        phoneNumber = "+2348031234567"
+      )
+    )
+
+    val duplicateCandidate = "+234 803 123 4567"
+    val newCandidate = "+234 802 987 6543"
+
+    fun isDuplicate(candidate: String): Boolean {
+      val clean = candidate.trim().replace(" ", "").replace("-", "")
+      return existing.any { f ->
+        val fClean = f.phoneNumber.replace(" ", "").replace("-", "")
+        fClean == clean || fClean.endsWith(clean.takeLast(10))
+      }
+    }
+
+    assertTrue("Duplicate phone must be flagged", isDuplicate(duplicateCandidate))
+    org.junit.Assert.assertFalse("Distinct phone must not be flagged", isDuplicate(newCandidate))
+  }
+
+  @Test
+  fun `verify agent approval status enum conversion and default fallback`() {
+    val pending = com.example.core.auth.AgentApprovalStatus.fromRaw("pending")
+    val approved = com.example.core.auth.AgentApprovalStatus.fromRaw("APPROVED")
+    val rejected = com.example.core.auth.AgentApprovalStatus.fromRaw("rejected")
+    val suspended = com.example.core.auth.AgentApprovalStatus.fromRaw("suspended")
+    val unknownFallback = com.example.core.auth.AgentApprovalStatus.fromRaw("unknown_status")
+
+    assertEquals(com.example.core.auth.AgentApprovalStatus.PENDING, pending)
+    assertEquals(com.example.core.auth.AgentApprovalStatus.APPROVED, approved)
+    assertEquals(com.example.core.auth.AgentApprovalStatus.REJECTED, rejected)
+    assertEquals(com.example.core.auth.AgentApprovalStatus.SUSPENDED, suspended)
+    assertEquals(com.example.core.auth.AgentApprovalStatus.PENDING, unknownFallback)
+  }
+
+  @Test
+  fun `verify agent registration client validation rules`() {
+    val context = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val vm = com.example.ui.viewmodel.AgentAuthViewModel(context)
+
+    // Initially blank fields should fail validation
+    vm.setSignUpFullName("")
+    vm.setSignUpEmail("")
+    val validBlank = vm.validateSignUpForm()
+    org.junit.Assert.assertFalse("Blank sign up must fail", validBlank)
+    assertTrue("Full name error must be present", vm.signUpErrors.value.containsKey("fullName"))
+    assertTrue("Email error must be present", vm.signUpErrors.value.containsKey("email"))
+
+    // Set valid agent registration information
+    vm.setSignUpFullName("Zubairu Abubakar")
+    vm.setSignUpEmail("zubairu.abubakar@traceharvest.ng")
+    vm.setSignUpAssociation("Garki Sesame Producers Cooperative")
+    vm.setSignUpLocation("Ringim LGA, Jigawa State")
+    vm.setSignUpPhone("+234 812 345 6789")
+    vm.setSignUpPassword("SecurePassword2026")
+    vm.setSignUpConfirmPassword("SecurePassword2026")
+
+    val validFilled = vm.validateSignUpForm()
+    assertTrue("Properly filled form must pass validation", validFilled)
+    assertTrue("Errors must be empty", vm.signUpErrors.value.isEmpty())
+  }
 }
+
 

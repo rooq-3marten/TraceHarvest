@@ -233,7 +233,7 @@ class TraceHarvestViewModel @JvmOverloads constructor(
                 } else {
                     _userMessage.value = "Farmer ${farmer.fullName} enrolled with Backend Farmer ID: ${farmer.farmerCode}."
                 }
-                _selectedTab.value = AppTab.LOG_PRACTICE
+                _selectedTab.value = AppTab.REGISTER_FARMER
             } catch (e: Exception) {
                 _userMessage.value = "Enrollment failed: ${e.localizedMessage}"
             }

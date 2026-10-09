@@ -219,3 +219,67 @@ data class AuthTokenResponse(
     @field:Json(name = "expires_in")
     val expiresIn: Long = 3600
 )
+
+/**
+ * Agent Self-Registration Request
+ * Note: App never sends a 'status' field. Status is set exclusively by the backend.
+ */
+@JsonClass(generateAdapter = true)
+data class AgentSignUpRequest(
+    @field:Json(name = "full_name")
+    val fullName: String,
+    @field:Json(name = "email")
+    val email: String,
+    @field:Json(name = "association")
+    val association: String,
+    @field:Json(name = "location")
+    val location: String,
+    @field:Json(name = "phone_number")
+    val phoneNumber: String,
+    @field:Json(name = "password")
+    val password: String
+)
+
+/**
+ * Agent Profile & Approval Status response from Backend
+ * Status values: 'pending', 'approved', 'rejected', 'suspended'
+ */
+@JsonClass(generateAdapter = true)
+data class AgentStatusResponse(
+    @field:Json(name = "agent_id")
+    val agentId: String? = null,
+    @field:Json(name = "full_name")
+    val fullName: String = "",
+    @field:Json(name = "email")
+    val email: String = "",
+    @field:Json(name = "association")
+    val association: String = "",
+    @field:Json(name = "location")
+    val location: String = "",
+    @field:Json(name = "phone_number")
+    val phoneNumber: String = "",
+    @field:Json(name = "status")
+    val status: String = "pending",
+    @field:Json(name = "rejection_reason")
+    val rejectionReason: String? = null,
+    @field:Json(name = "access_token")
+    val accessToken: String? = null
+)
+
+/**
+ * Resubmission Request when status is 'rejected'
+ */
+@JsonClass(generateAdapter = true)
+data class AgentResubmitRequest(
+    @field:Json(name = "full_name")
+    val fullName: String,
+    @field:Json(name = "association")
+    val association: String,
+    @field:Json(name = "location")
+    val location: String,
+    @field:Json(name = "phone_number")
+    val phoneNumber: String,
+    @field:Json(name = "password")
+    val password: String? = null
+)
+

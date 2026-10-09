@@ -1,6 +1,7 @@
 package com.example.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
@@ -8,7 +9,13 @@ import java.util.UUID
  * Offline-first sync staging entity.
  * Queues local records for background synchronization via WorkManager or immediate push.
  */
-@Entity(tableName = "pending_syncs")
+@Entity(
+    tableName = "pending_syncs",
+    indices = [
+        Index("status"),
+        Index("entityType")
+    ]
+)
 data class PendingSync(
     @PrimaryKey
     val id: String = UUID.randomUUID().toString(), // UUID

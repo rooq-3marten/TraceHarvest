@@ -31,6 +31,8 @@ import java.util.Calendar
 @Composable
 fun HomeDashboardScreen(
     agentName: String = "Aminu Bello",
+    agentAssociation: String = "Kano Rice & Grains Cooperative",
+    agentLocation: String = "Dambatta, Kano State",
     currentZone: GeopoliticalZone,
     totalFarmersCount: Int,
     totalPracticesCount: Int,
@@ -65,50 +67,78 @@ fun HomeDashboardScreen(
     ) {
         item { Spacer(Modifier.height(4.dp)) }
 
-        // Top Greeting & Region Header
+        // Top Greeting & Agent Profile Header
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SoftCreamSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, OutlineWarm),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "$greeting,",
-                        fontSize = 14.sp,
-                        color = MutedBrownText
-                    )
-                    Text(
-                        text = agentName,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CharcoalBrownText
-                    )
-                }
-
-                // Zone Badge
-                Surface(
-                    onClick = onOpenSettings,
-                    color = SoftCreamSurface,
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, OutlineWarm)
-                ) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(ForestGreenSecondary, CircleShape)
-                        )
-                        Text(
-                            text = "${zoneProfile.zone.code} • ${zoneProfile.states.first()}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CharcoalBrownText
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "$greeting,",
+                                fontSize = 13.sp,
+                                color = MutedBrownText
+                            )
+                            Text(
+                                text = agentName,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CharcoalBrownText
+                            )
+                        }
+
+                        // Zone Badge
+                        Surface(
+                            onClick = onOpenSettings,
+                            color = ForestGreenContainer,
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ForestGreenLight.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(DarkGreenPrimary, CircleShape)
+                                )
+                                Text(
+                                    text = "ACTIVE AGENT",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DarkGreenPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Group, contentDescription = null, tint = ForestGreenSecondary, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(agentAssociation, fontSize = 12.sp, color = MutedBrownText, maxLines = 1)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Place, contentDescription = null, tint = ForestGreenSecondary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(agentLocation, fontSize = 12.sp, color = MutedBrownText, maxLines = 1)
                     }
                 }
             }
@@ -161,6 +191,73 @@ fun HomeDashboardScreen(
                         Icons.Default.ChevronRight,
                         contentDescription = "Open sync",
                         tint = MutedBrownText
+                    )
+                }
+            }
+        }
+
+        // Section 2: Prominent Hero Primary Action - Register a farmer
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onNavigateToRegisterFarmer)
+                    .testTag("primary_action_register_farmer"),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = DarkGreenPrimary),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(Color.White, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PersonAdd,
+                            contentDescription = "Register a farmer",
+                            tint = DarkGreenDark,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Surface(
+                            color = DarkGreenContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "PRIMARY ACTION",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DarkGreenDark,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Register a farmer",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Capture GPS coordinates, boundary walk, and crop profile",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }

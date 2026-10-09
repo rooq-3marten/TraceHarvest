@@ -1,6 +1,7 @@
 package com.example.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.Locale
 import java.util.UUID
@@ -10,7 +11,15 @@ import kotlin.math.sqrt
  * Offline-first Farmer Entity matching the TraceHarvest Central Registry specification.
  * Conforms to the 6 Geopolitical Zones and EUDR WKT Boundary Standard.
  */
-@Entity(tableName = "farmers")
+@Entity(
+    tableName = "farmers",
+    indices = [
+        Index("syncStatus"),
+        Index("phoneNumber"),
+        Index("farmerCode"),
+        Index("zone")
+    ]
+)
 data class FarmerEntity(
     @PrimaryKey
     val localId: String = UUID.randomUUID().toString(), // UUID generated on device

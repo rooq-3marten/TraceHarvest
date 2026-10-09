@@ -55,14 +55,7 @@ object NetworkClient {
             .connectTimeout(35, TimeUnit.SECONDS) // Accommodates 2G/EDGE cellular handshake
             .readTimeout(45, TimeUnit.SECONDS)
             .writeTimeout(45, TimeUnit.SECONDS)
-            .addInterceptor { chain ->
-                val requestBuilder = chain.request().newBuilder()
-                    .addHeader("Accept-Encoding", "gzip")
-                authToken?.let {
-                    requestBuilder.addHeader("Authorization", "Bearer $it")
-                }
-                chain.proceed(requestBuilder.build())
-            }
+            .addInterceptor(AuthInterceptor(tokenProvider = { authToken }))
             .addInterceptor(logging)
             .retryOnConnectionFailure(true)
             .build()

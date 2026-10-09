@@ -85,6 +85,30 @@ interface TraceHarvestApiService {
     ): Response<AuthTokenResponse>
 
     /**
+     * Agent self-registration. Server generates approval status as 'pending'.
+     */
+    @Headers("Content-Type: application/json")
+    @POST("auth/agent/signup")
+    suspend fun registerAgent(
+        @Body request: com.example.data.remote.model.AgentSignUpRequest
+    ): Response<com.example.data.remote.model.AgentStatusResponse>
+
+    /**
+     * Fetch agent profile and live approval status (pending, approved, rejected, suspended).
+     */
+    @GET("auth/agent/status")
+    suspend fun getAgentStatus(): Response<com.example.data.remote.model.AgentStatusResponse>
+
+    /**
+     * Resubmit updated profile details after rejection.
+     */
+    @Headers("Content-Type: application/json")
+    @POST("auth/agent/resubmit")
+    suspend fun resubmitAgentDetails(
+        @Body request: com.example.data.remote.model.AgentResubmitRequest
+    ): Response<com.example.data.remote.model.AgentStatusResponse>
+
+    /**
      * Refresh JWT token.
      */
     @POST("auth/refresh")

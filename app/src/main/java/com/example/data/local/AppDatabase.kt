@@ -20,7 +20,7 @@ import com.example.data.local.entity.SmsLogEntity
         SmsLogEntity::class,
         PendingSync::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

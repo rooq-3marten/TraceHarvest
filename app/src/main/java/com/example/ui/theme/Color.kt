@@ -30,6 +30,7 @@ val WarmOchreContainer = Color(0xFFE8F5E9)
 val WhiteBackground = Color(0xFFF7FAF8)       // Ultra-clean subtle porcelain white background
 val PureWhiteSurface = Color(0xFFFFFFFF)      // 100% Crisp White for cards, dialogs & sheets
 val WhiteSurfaceVariant = Color(0xFFF0F5F1)   // Soft Mint-tinted white for inputs and chips
+val PureWhiteSurfaceVariant = WhiteSurfaceVariant
 val OutlineGreen = Color(0xFFD6E3D8)          // Subtle clean sage outline
 
 // Typography & Text: Deep Slate-Charcoal (Never harsh stark black, exceptional contrast)
@@ -79,3 +80,11 @@ val TextSecondary = MutedDarkText
 val OutlineBorder = OutlineGreen
 val SurfaceWarm = WhiteBackground
 val SurfaceVariantWarm = WhiteSurfaceVariant
+
+// UI convenience color aliases
+val SoftGreenBg = DarkGreenContainer
+val TextMutedSubtle = MutedDarkText
+val ForestGreenAccent = ForestGreenLight
+val GoldenAmber = NaturalStatusAmber
+val AlertRed = NaturalStatusRed
+
