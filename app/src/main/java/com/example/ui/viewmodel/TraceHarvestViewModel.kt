@@ -41,7 +41,8 @@ class TraceHarvestViewModel @JvmOverloads constructor(
     repositoryInstance: ITraceHarvestRepository? = null
 ) : AndroidViewModel(application) {
 
-    val currentAgentId = "AGENT-NG-042"
+    // Set from the signed-in agent's profile (see TraceHarvestApp); never hardcoded.
+    var currentAgentId: String = ""
 
     private val repository: ITraceHarvestRepository = repositoryInstance 
         ?: run {
