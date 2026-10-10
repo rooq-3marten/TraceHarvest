@@ -30,8 +30,8 @@ import java.util.Calendar
  */
 @Composable
 fun HomeDashboardScreen(
-    agentName: String = "Aminu Bello",
-    agentAssociation: String = "Kano Rice & Grains Cooperative",
+    agentName: String = "",
+    agentAssociation: String = "",
     agentLocation: String = "Dambatta, Kano State",
     currentZone: GeopoliticalZone,
     totalFarmersCount: Int,
