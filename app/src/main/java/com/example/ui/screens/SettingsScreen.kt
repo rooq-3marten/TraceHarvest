@@ -26,8 +26,9 @@ import com.example.ui.theme.*
 @Composable
 fun SettingsScreen(
     currentZone: GeopoliticalZone,
-    agentName: String = "Aminu Bello Dambatta",
-    agentPhone: String = "+2348031234567",
+    agentId: String = "",
+    agentName: String = "",
+    agentPhone: String = "",
     onSwitchZone: () -> Unit,
     onLogout: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -98,7 +99,7 @@ fun SettingsScreen(
 
                             Column {
                                 Text(agentName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = CharcoalBrownText)
-                                Text("ID: AGENT-NG-042 • $agentPhone", fontSize = 12.sp, color = MutedBrownText)
+                                Text("ID: $agentId • $agentPhone", fontSize = 12.sp, color = MutedBrownText)
                             }
                         }
                     }
