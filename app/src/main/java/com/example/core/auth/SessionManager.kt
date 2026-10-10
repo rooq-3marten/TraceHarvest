@@ -31,12 +31,12 @@ enum class AgentApprovalStatus(val rawValue: String) {
 }
 
 data class AgentProfile(
-    val agentId: String = "AGENT-NG-042",
-    val name: String = "Aminu Bello",
-    val phone: String = "+2348031234567",
-    val email: String = "aminu.bello@traceharvest.ng",
-    val association: String = "Kano Rice & Grains Cooperative",
-    val location: String = "Dambatta, Kano State",
+    val agentId: String = "",
+    val name: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val association: String = "",
+    val location: String = "",
     val status: AgentApprovalStatus = AgentApprovalStatus.PENDING,
     val rejectionReason: String? = null,
     val role: String = "FIELD_AGENT",
@@ -104,12 +104,12 @@ class SessionManager(private val context: Context) {
         }
         .map { prefs ->
             AgentProfile(
-                agentId = prefs[KEY_AGENT_ID] ?: "AGENT-NG-042",
-                name = prefs[KEY_AGENT_NAME] ?: "Aminu Bello",
-                phone = prefs[KEY_AGENT_PHONE] ?: "+2348031234567",
-                email = prefs[KEY_AGENT_EMAIL] ?: "aminu.bello@traceharvest.ng",
-                association = prefs[KEY_AGENT_ASSOCIATION] ?: "Kano Rice & Grains Cooperative",
-                location = prefs[KEY_AGENT_LOCATION] ?: "Dambatta, Kano State",
+                agentId = prefs[KEY_AGENT_ID] ?: "",
+                name = prefs[KEY_AGENT_NAME] ?: "",
+                phone = prefs[KEY_AGENT_PHONE] ?: "",
+                email = prefs[KEY_AGENT_EMAIL] ?: "",
+                association = prefs[KEY_AGENT_ASSOCIATION] ?: "",
+                location = prefs[KEY_AGENT_LOCATION] ?: "",
                 status = AgentApprovalStatus.fromRaw(prefs[KEY_AGENT_STATUS] ?: "pending"),
                 rejectionReason = prefs[KEY_REJECTION_REASON],
                 role = prefs[KEY_AGENT_ROLE] ?: "FIELD_AGENT",
@@ -124,8 +124,8 @@ class SessionManager(private val context: Context) {
         name: String,
         phone: String,
         email: String,
-        association: String = "Kano Rice & Grains Cooperative",
-        location: String = "Dambatta, Kano State",
+        association: String = "",
+        location: String = "",
         status: AgentApprovalStatus = AgentApprovalStatus.APPROVED,
         rejectionReason: String? = null,
         keepSignedIn: Boolean = true,
