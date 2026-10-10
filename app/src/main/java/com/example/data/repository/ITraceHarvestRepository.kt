@@ -52,7 +52,7 @@ interface ITraceHarvestRepository {
         latitude: Double,
         longitude: Double,
         cooperative: String = "",
-        agentId: String = "AGENT-NG-042",
+        agentId: String = "",
         isOfflineMode: Boolean = true
     ): FarmerEntity
 
@@ -78,7 +78,7 @@ interface ITraceHarvestRepository {
         farmerDisplayId: String = farmerCode,
         nafdacRegNo: String = "",
         gpsCoordinates: String = "",
-        agentId: String = "AGENT-NG-042",
+        agentId: String = "",
         syncStatus: String = "pending_sync"
     ): PracticeLogEntity
 
