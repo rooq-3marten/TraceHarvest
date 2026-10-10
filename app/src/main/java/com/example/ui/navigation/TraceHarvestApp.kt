@@ -85,6 +85,11 @@ fun TraceHarvestApp(
     var appNavState by rememberSaveable { mutableStateOf(AppNavState.SPLASH) }
     var currentAgentProfile by remember { mutableStateOf(AgentProfile()) }
 
+    // Every farmer, practice log and sync is attributed to the signed-in agent
+    LaunchedEffect(currentAgentProfile.agentId) {
+        viewModel.currentAgentId = currentAgentProfile.agentId
+    }
+
     // Collect profile updates from SessionManager
     LaunchedEffect(Unit) {
         sessionManager.agentProfileFlow.collect { profile ->
@@ -309,7 +314,7 @@ fun TraceHarvestApp(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TraceHarvestTopBar(
-                    agentId = viewModel.currentAgentId,
+                    agentId = currentAgentProfile.agentId,
                     currentZone = currentZone,
                     totalPending = totalPendingCount,
                     isSyncing = isSyncing,
@@ -360,8 +365,8 @@ fun TraceHarvestApp(
                             }
                             AppTab.HOME_DASHBOARD -> {
                                 HomeDashboardScreen(
-                                    agentName = currentAgentProfile.name.ifBlank { "Aminu Bello" },
-                                    agentAssociation = currentAgentProfile.association.ifBlank { "Kano Rice & Grains Cooperative" },
+                                    agentName = currentAgentProfile.name,
+                                    agentAssociation = currentAgentProfile.association,
                                     agentLocation = currentAgentProfile.location.ifBlank { "Dambatta, Kano State" },
                                     currentZone = currentZone,
                                     totalFarmersCount = farmers.size,
@@ -378,7 +383,7 @@ fun TraceHarvestApp(
                             AppTab.REGISTER_FARMER -> {
                                 EnrollFarmerScreen(
                                     enrolledFarmers = farmers,
-                                    agentId = viewModel.currentAgentId,
+                                    agentId = currentAgentProfile.agentId,
                                     zone = currentZone,
                                     onNavigateToPractice = { viewModel.selectTab(AppTab.LOG_PRACTICE) },
                                     onNavigateToSync = { viewModel.selectTab(AppTab.SYNC_RECORDS) },
@@ -395,7 +400,7 @@ fun TraceHarvestApp(
                                 LogPracticeScreen(
                                     farmers = farmers,
                                     recentLogs = practiceLogs,
-                                    agentId = viewModel.currentAgentId,
+                                    agentId = currentAgentProfile.agentId,
                                     pendingSyncCount = pendingPracticeCount,
                                     onSyncAllPending = { viewModel.syncAllPending() },
                                     onLogPractice = { code, name, crop, practiceType, prod, active, qty, unit, date, photoUri, lat, lng, acc, phi, localId, displayId, nafdacNo, coords, syncStatus ->
@@ -441,15 +446,16 @@ fun TraceHarvestApp(
                                     pendingPracticeCount = pendingPracticeCount,
                                     totalPendingCount = totalPendingCount,
                                     isSyncing = isSyncing,
-                                    agentId = viewModel.currentAgentId,
+                                    agentId = currentAgentProfile.agentId,
                                     onSyncAll = { viewModel.syncAllPending() }
                                 )
                             }
                             AppTab.SETTINGS -> {
                                 SettingsScreen(
                                     currentZone = currentZone,
-                                    agentName = currentAgentProfile.name.ifBlank { "Aminu Bello Dambatta" },
-                                    agentPhone = currentAgentProfile.phone.ifBlank { "+2348031234567" },
+                                    agentId = currentAgentProfile.agentId,
+                                    agentName = currentAgentProfile.name,
+                                    agentPhone = currentAgentProfile.phone,
                                     onSwitchZone = { viewModel.selectTab(AppTab.ZONE_SELECTION) },
                                     onLogout = {
                                         coroutineScope.launch {
