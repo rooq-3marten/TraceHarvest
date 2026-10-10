@@ -33,7 +33,7 @@ data class FarmerSyncDto(
     @field:Json(name = "cooperative_name")
     val cooperativeName: String? = null,
     @field:Json(name = "agent_id")
-    val agentId: String = "AGENT-NG-042",
+    val agentId: String = "",
     @field:Json(name = "created_at_epoch_ms")
     val createdAtEpochMs: Long = System.currentTimeMillis()
 )
@@ -74,7 +74,7 @@ data class PracticeLogSyncDto(
     @field:Json(name = "risk_level")
     val riskLevel: String = "COMPLIANT",
     @field:Json(name = "agent_id")
-    val agentId: String = "AGENT-NG-042",
+    val agentId: String = "",
     @field:Json(name = "verification_photo_uri")
     val verificationPhotoUri: String? = null
 )
@@ -99,7 +99,7 @@ data class BatchSyncDto(
     @field:Json(name = "aggregation_gps_lng")
     val aggregationGpsLng: Double? = null,
     @field:Json(name = "agent_id")
-    val agentId: String = "AGENT-NG-042",
+    val agentId: String = "",
     @field:Json(name = "farmer_codes")
     val farmerCodes: List<String> = emptyList(),
     @field:Json(name = "created_at_epoch_ms")
@@ -129,7 +129,7 @@ data class PendingRecordDto(
 @JsonClass(generateAdapter = true)
 data class AgentBatchSyncRequest(
     @field:Json(name = "agent_id")
-    val agentId: String = "AGENT-NG-042",
+    val agentId: String = "",
     @field:Json(name = "device_timestamp_ms")
     val deviceTimestampMs: Long = System.currentTimeMillis(),
     @field:Json(name = "farmers")
