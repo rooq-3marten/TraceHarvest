@@ -321,7 +321,8 @@ class TraceHarvestRepository(
                 syncedPracticesCount = 0,
                 totalPendingRemaining = pendingFarmers.size + pendingPractices.size,
                 isSuccess = false,
-                message = "Could not reach the server. Records are kept on this device and will sync later."
+                message = NetworkClient.lastSyncRejection
+                    ?: "Could not reach the server. Records are kept on this device and will sync later."
             )
 
         // 1. Sync pending farmers -> Backend generates or confirms unique official Farmer ID
