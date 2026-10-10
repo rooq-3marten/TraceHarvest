@@ -124,7 +124,7 @@ data class PracticeMenuItem(
 fun LogPracticeScreen(
     farmers: List<FarmerEntity>,
     recentLogs: List<PracticeLogEntity>,
-    agentId: String = "AGENT-NG-042",
+    agentId: String = "",
     pendingSyncCount: Int = 0,
     onSyncAllPending: () -> Unit = {},
     onLogPractice: (
