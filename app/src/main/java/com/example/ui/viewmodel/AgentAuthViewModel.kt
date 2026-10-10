@@ -28,7 +28,7 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
     private val sessionManager = SessionManager.getInstance(application)
 
     // Sign-in state
-    private val _isPhoneMode = MutableStateFlow(true)
+    private val _isPhoneMode = MutableStateFlow(false)
     val isPhoneMode: StateFlow<Boolean> = _isPhoneMode.asStateFlow()
 
     private val _phoneNumber = MutableStateFlow("+2348031234567")
@@ -53,7 +53,7 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
     private val _signUpEmail = MutableStateFlow("")
     val signUpEmail: StateFlow<String> = _signUpEmail.asStateFlow()
 
-    private val _signUpAssociation = MutableStateFlow("Kano Rice & Grains Cooperative")
+    private val _signUpAssociation = MutableStateFlow("")
     val signUpAssociation: StateFlow<String> = _signUpAssociation.asStateFlow()
 
     private val _signUpLocation = MutableStateFlow("Dambatta, Kano State")
@@ -238,6 +238,25 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
         return errors.isEmpty()
     }
 
+
+    /** Reads {"message": ...}, {"detail": {"message": ...}} or {"detail": "..."} from an error body. */
+    private fun serverMessage(response: retrofit2.Response<*>?): String? {
+        val raw: String? = try { response?.errorBody()?.string() } catch (e: Exception) { null }
+        if (raw.isNullOrBlank()) return null
+        return try {
+            val json = org.json.JSONObject(raw)
+            val detail = json.opt("detail")
+            when {
+                json.optString("message").isNotBlank() -> json.optString("message")
+                detail is org.json.JSONObject && detail.optString("message").isNotBlank() -> detail.optString("message")
+                detail is String && detail.isNotBlank() -> detail
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /**
      * Submit Self-Registration
      * Rule: Never sends a status value. The backend assigns 'pending'.
@@ -267,48 +286,40 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                if (response != null && response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
-                    val token = body.accessToken ?: "jwt_pending_${System.currentTimeMillis()}"
+                val body = response?.body()
+                val token = body?.accessToken
+                val newAgentId = body?.agentId
+
+                if (response != null && response.isSuccessful && body != null &&
+                    !token.isNullOrBlank() && !newAgentId.isNullOrBlank()
+                ) {
                     sessionManager.saveSession(
                         token = token,
-                        refreshToken = "rf_agent_${System.currentTimeMillis()}",
-                        agentId = body.agentId ?: "AGT-${System.currentTimeMillis() % 10000}",
+                        refreshToken = null,
+                        agentId = newAgentId,
                         name = body.fullName.ifBlank { req.fullName },
                         phone = body.phoneNumber.ifBlank { req.phoneNumber },
                         email = body.email.ifBlank { req.email },
                         association = body.association.ifBlank { req.association },
                         location = body.location.ifBlank { req.location },
-                        status = AgentApprovalStatus.PENDING,
+                        status = AgentApprovalStatus.fromRaw(body.status),
                         rejectionReason = null,
                         keepSignedIn = true
                     )
                     NetworkClient.setAuthToken(token)
                     _isLoading.value = false
                     onSuccessPending()
-                } else if (response != null && response.code() == 409) {
+                } else if (response == null) {
                     _isLoading.value = false
-                    _errorMessage.value = "An account with this email or phone number already exists. Please sign in."
+                    _errorMessage.value =
+                        "Could not reach the server. Check your connection and try again. Your application has NOT been submitted."
                 } else {
-                    // Graceful local handling when offline or mock sandbox
-                    val generatedToken = "jwt_pending_${System.currentTimeMillis()}"
-                    val generatedAgentId = "AGT-${System.currentTimeMillis() % 10000}"
-                    sessionManager.saveSession(
-                        token = generatedToken,
-                        refreshToken = "rf_agent_${System.currentTimeMillis()}",
-                        agentId = generatedAgentId,
-                        name = req.fullName,
-                        phone = req.phoneNumber,
-                        email = req.email,
-                        association = req.association,
-                        location = req.location,
-                        status = AgentApprovalStatus.PENDING,
-                        rejectionReason = null,
-                        keepSignedIn = true
-                    )
-                    NetworkClient.setAuthToken(generatedToken)
                     _isLoading.value = false
-                    onSuccessPending()
+                    _errorMessage.value = serverMessage(response) ?: when (response.code()) {
+                        409 -> "An account with this email or phone number already exists. Please sign in."
+                        429 -> "Too many attempts. Please wait 15 minutes and try again."
+                        else -> "Registration failed (error ${response.code()}). Please try again."
+                    }
                 }
             } catch (e: Exception) {
                 _isLoading.value = false
@@ -351,17 +362,26 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // Update local session state to PENDING
-                sessionManager.updateAgentStatus(
-                    status = AgentApprovalStatus.PENDING,
-                    rejectionReason = null,
-                    updatedName = name,
-                    updatedAssociation = assoc,
-                    updatedLocation = loc,
-                    updatedPhone = ph
-                )
-                _isLoading.value = false
-                onSuccess()
+                val result = response?.body()
+                if (response != null && response.isSuccessful && result != null) {
+                    // Only now (server confirmed) update the local session
+                    sessionManager.updateAgentStatus(
+                        status = AgentApprovalStatus.fromRaw(result.status),
+                        rejectionReason = result.rejectionReason,
+                        updatedName = name,
+                        updatedAssociation = assoc,
+                        updatedLocation = loc,
+                        updatedPhone = ph
+                    )
+                    _isLoading.value = false
+                    onSuccess()
+                } else if (response == null) {
+                    _isLoading.value = false
+                    _errorMessage.value = "Could not reach the server. Your details have NOT been resubmitted."
+                } else {
+                    _isLoading.value = false
+                    _errorMessage.value = serverMessage(response) ?: "Resubmission failed (error ${response.code()}). Please try again."
+                }
             } catch (e: Exception) {
                 _isLoading.value = false
                 _errorMessage.value = "Network error. Please try again."
@@ -378,18 +398,8 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun login(onRouteStatus: (AgentApprovalStatus, AgentProfile) -> Unit) {
         if (_isPhoneMode.value) {
-            val phone = _phoneNumber.value.trim()
-            val pinStr = _pin.value.trim()
-
-            if (!isValidNigerianPhone(phone)) {
-                _errorMessage.value = "Please enter a valid Nigerian phone number (+234 803 123 4567)"
-                return
-            }
-            if (pinStr.length !in 4..6) {
-                _errorMessage.value = "PIN must be 4 or 6 digits"
-                return
-            }
-            executeLogin(identifier = phone, secret = hashPin(pinStr), isPhone = true, onRouteStatus = onRouteStatus)
+            _errorMessage.value = "Phone and PIN sign-in is not available yet. Please use your email and password."
+            return
         } else {
             val em = _email.value.trim()
             val pw = _password.value.trim()
@@ -425,54 +435,46 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                val token: String
-                if (response != null && response.isSuccessful && response.body() != null) {
-                    token = response.body()!!.accessToken
-                } else {
-                    // Check against cached credentials or sandbox fallback
-                    val cached = sessionManager.getCachedProfile()
-                    if (isPhone && (identifier.contains("8031234567") || identifier == cached.phone)) {
-                        token = "jwt_traceharvest_field_" + System.currentTimeMillis()
-                    } else if (!isPhone && (identifier.contains("@") && secret.length >= 4)) {
-                        token = "jwt_traceharvest_sup_" + System.currentTimeMillis()
-                    } else {
-                        _isLoading.value = false
-                        _errorMessage.value = if (isPhone) {
-                            "That phone number or PIN doesn't match our records"
-                        } else {
-                            "That email or password doesn't match our records"
-                        }
-                        return@launch
-                    }
+                if (response == null) {
+                    _isLoading.value = false
+                    _errorMessage.value = "Could not reach the server. Check your connection and try again."
+                    return@launch
+                }
+                val tokenBody = response.body()
+                if (!response.isSuccessful || tokenBody == null) {
+                    _isLoading.value = false
+                    _errorMessage.value = serverMessage(response) ?: "That email or password doesn't match our records"
+                    return@launch
                 }
 
+                val token = tokenBody.accessToken
                 NetworkClient.setAuthToken(token)
 
-                // Fetch live status and profile from backend
+                // The profile and approval status always come from the server
                 val statusResult = fetchAgentStatusFromServer()
-                val finalStatus: AgentApprovalStatus = if (statusResult != null) {
-                    AgentApprovalStatus.fromRaw(statusResult.status)
-                } else {
-                    sessionManager.getCachedProfile().status
+                val serverAgentId = statusResult?.agentId
+                if (statusResult == null || serverAgentId.isNullOrBlank()) {
+                    NetworkClient.setAuthToken(null)
+                    _isLoading.value = false
+                    _errorMessage.value = "Signed in, but your profile could not be loaded. Please try again."
+                    return@launch
                 }
-                val finalReason = statusResult?.rejectionReason
 
                 val finalProfile = AgentProfile(
-                    agentId = statusResult?.agentId ?: if (isPhone) "AGENT-NG-042" else "SUP-NG-012",
-                    name = statusResult?.fullName?.ifBlank { null }
-                        ?: if (isPhone) "Aminu Bello Dambatta" else "Engr. Fatima Garba",
-                    phone = statusResult?.phoneNumber?.ifBlank { null } ?: identifier,
-                    email = statusResult?.email?.ifBlank { null } ?: identifier,
-                    association = statusResult?.association?.ifBlank { null } ?: "Kano Rice & Grains Cooperative",
-                    location = statusResult?.location?.ifBlank { null } ?: "Dambatta, Kano State",
-                    status = finalStatus,
-                    rejectionReason = finalReason,
-                    role = if (!isPhone && identifier.contains("supervisor")) "SUPERVISOR" else "FIELD_AGENT"
+                    agentId = serverAgentId,
+                    name = statusResult.fullName,
+                    phone = statusResult.phoneNumber,
+                    email = statusResult.email.ifBlank { identifier },
+                    association = statusResult.association,
+                    location = statusResult.location,
+                    status = AgentApprovalStatus.fromRaw(statusResult.status),
+                    rejectionReason = statusResult.rejectionReason,
+                    role = "FIELD_AGENT"
                 )
 
                 sessionManager.saveSession(
                     token = token,
-                    refreshToken = "rf_${System.currentTimeMillis()}",
+                    refreshToken = tokenBody.refreshToken,
                     agentId = finalProfile.agentId,
                     name = finalProfile.name,
                     phone = finalProfile.phone,
@@ -520,45 +522,6 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
                 val cached = sessionManager.getCachedProfile()
                 onResult(cached.status)
             }
-        }
-    }
-
-    /**
-     * Helper to simulate admin approval in Sandbox for instant verification.
-     */
-    fun simulateAdminApproval(onResult: (AgentApprovalStatus) -> Unit) {
-        viewModelScope.launch {
-            sessionManager.updateAgentStatus(
-                status = AgentApprovalStatus.APPROVED,
-                rejectionReason = null
-            )
-            onResult(AgentApprovalStatus.APPROVED)
-        }
-    }
-
-    /**
-     * Helper to simulate admin rejection in Sandbox for instant verification.
-     */
-    fun simulateAdminRejection(reason: String, onResult: (AgentApprovalStatus) -> Unit) {
-        viewModelScope.launch {
-            sessionManager.updateAgentStatus(
-                status = AgentApprovalStatus.REJECTED,
-                rejectionReason = reason
-            )
-            onResult(AgentApprovalStatus.REJECTED)
-        }
-    }
-
-    /**
-     * Helper to simulate admin suspension in Sandbox for instant verification.
-     */
-    fun simulateAdminSuspension(onResult: (AgentApprovalStatus) -> Unit) {
-        viewModelScope.launch {
-            sessionManager.updateAgentStatus(
-                status = AgentApprovalStatus.SUSPENDED,
-                rejectionReason = "Compliance audit in progress"
-            )
-            onResult(AgentApprovalStatus.SUSPENDED)
         }
     }
 
