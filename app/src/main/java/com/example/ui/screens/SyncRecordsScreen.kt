@@ -81,7 +81,7 @@ fun SyncRecordsScreen(
     pendingPracticeCount: Int,
     totalPendingCount: Int,
     isSyncing: Boolean,
-    agentId: String = "AGENT-NG-042",
+    agentId: String = "",
     onSyncAll: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
