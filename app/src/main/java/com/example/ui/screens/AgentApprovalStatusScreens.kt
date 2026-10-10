@@ -148,20 +148,6 @@ fun AgentPendingApprovalScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Sandbox Simulator Helper: lets developers/testers simulate admin approval immediately
-        OutlinedButton(
-            onClick = {
-                authViewModel.simulateAdminApproval { onApproved() }
-            },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = DarkGreenPrimary),
-            modifier = Modifier.fillMaxWidth().testTag("simulate_admin_approve_button")
-        ) {
-            Icon(Icons.Default.AdminPanelSettings, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Simulate Dashboard Approval (Sandbox)")
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         TextButton(
