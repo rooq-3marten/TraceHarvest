@@ -87,18 +87,43 @@ object NetworkClient {
      * Executes the batch sync against FastAPI. Returns null when the server is unreachable
      * or rejects the request, so records stay pending and retry later (no fake "synced").
      */
+    /** Server's reason when a sync was refused (401/403, e.g. agent not approved); null otherwise. */
+    @Volatile
+    var lastSyncRejection: String? = null
+
+    private fun readServerMessage(response: retrofit2.Response<*>): String? {
+        val raw: String? = try { response.errorBody()?.string() } catch (e: Exception) { null }
+        if (raw.isNullOrBlank()) return null
+        return try {
+            val message = org.json.JSONObject(raw).optString("message")
+            if (message.isNotBlank()) message else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun executeResilientBatchSync(request: AgentBatchSyncRequest): AgentBatchSyncResponse? {
         mockResponseForTesting?.let { return it }
+        lastSyncRejection = null
 
         return try {
             val response = apiService.syncBatch(request)
             if (response.isSuccessful && response.body() != null) {
                 response.body()!!
+            } else if (response.code() == 401 || response.code() == 403) {
+                // The server understood the request and refused it: surface why, don't retry elsewhere
+                lastSyncRejection = readServerMessage(response)
+                    ?: "The server refused this sync. Check your account status."
+                null
             } else {
                 val upstreamResponse = apiService.syncUpstream(request)
                 if (upstreamResponse.isSuccessful && upstreamResponse.body() != null) {
                     upstreamResponse.body()!!
                 } else {
+                    if (upstreamResponse.code() == 401 || upstreamResponse.code() == 403) {
+                        lastSyncRejection = readServerMessage(upstreamResponse)
+                            ?: "The server refused this sync. Check your account status."
+                    }
                     null
                 }
             }
