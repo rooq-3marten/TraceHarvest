@@ -10,7 +10,7 @@ data class HarvestBatchEntity(
     val localId: String = UUID.randomUUID().toString(),
     val serverId: String? = null,
     val batchCode: String,
-    val agentId: String = "AGENT-NG-042",
+    val agentId: String, // set from the signed-in agent; never defaulted
     val totalQuantity: Double = 1.0,
     val qualityGrade: String = "Grade A Export Ready",
     val aggregationGpsLat: Double? = null,

@@ -24,7 +24,7 @@ data class PracticeLogEntity(
     val quantity: Double = 1.0,
     val logDate: Long = System.currentTimeMillis(),
     val source: String = "agent", // "agent", "ussd"
-    val agentId: String = "AGENT-NG-042",
+    val agentId: String, // set from the signed-in agent; never defaulted
     val syncStatus: String = "PENDING", // "PENDING", "SYNCED", "FAILED"
     val createdAt: Long = System.currentTimeMillis(),
 

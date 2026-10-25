@@ -62,7 +62,7 @@ data class FarmerEntity(
     val isSynced: Boolean = syncStatus == "SYNCED" || syncStatus == "synced",
     val farmerDisplayId: String = if (farmerCode.isNotBlank()) farmerCode else "PENDING",
     val gpsPolygon: String = "",
-    val agentId: String = "",
+    val agentId: String, // set from the signed-in agent; never defaulted
     val clientUuid: String = localId
 ) {
     /**
