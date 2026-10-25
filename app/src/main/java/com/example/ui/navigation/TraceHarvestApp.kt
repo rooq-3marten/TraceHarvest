@@ -90,6 +90,18 @@ fun TraceHarvestApp(
         viewModel.currentAgentId = currentAgentProfile.agentId
     }
 
+    // A rejected silent token refresh clears the session. Return to Login with a notice;
+    // every record stored on the device is kept.
+    LaunchedEffect(Unit) {
+        SessionManager.sessionExpiredEvents.collect {
+            sessionManager.consumeSessionExpiredNotice()
+            authViewModel.showSessionExpired()
+            if (appNavState != AppNavState.SPLASH && appNavState != AppNavState.SIGN_UP) {
+                appNavState = AppNavState.LOGIN
+            }
+        }
+    }
+
     // Collect profile updates from SessionManager
     LaunchedEffect(Unit) {
         sessionManager.agentProfileFlow.collect { profile ->
@@ -139,6 +151,9 @@ fun TraceHarvestApp(
                     viewModel.selectTab(AppTab.HOME_DASHBOARD)
                 },
                 onNavigateToLogin = {
+                    coroutineScope.launch {
+                        if (sessionManager.consumeSessionExpiredNotice()) authViewModel.showSessionExpired()
+                    }
                     appNavState = AppNavState.LOGIN
                 },
                 onNavigateToStatus = { status, profile ->
@@ -273,6 +288,7 @@ fun TraceHarvestApp(
     val pendingPracticeCount by viewModel.pendingPracticeSyncCount.collectAsStateWithLifecycle()
     val totalPendingCount by viewModel.totalPendingSyncCount.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val otherAccountPending by viewModel.otherAccountPendingCount.collectAsStateWithLifecycle()
 
     var showGuideDialog by remember { mutableStateOf(false) }
     var activeMapTarget by remember { mutableStateOf<FarmMapTarget?>(null) }
@@ -447,6 +463,7 @@ fun TraceHarvestApp(
                                     totalPendingCount = totalPendingCount,
                                     isSyncing = isSyncing,
                                     agentId = currentAgentProfile.agentId,
+                                    otherAccountCount = otherAccountPending,
                                     onSyncAll = { viewModel.syncAllPending() }
                                 )
                             }
