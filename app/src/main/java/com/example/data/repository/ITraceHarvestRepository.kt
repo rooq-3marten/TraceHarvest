@@ -12,7 +12,9 @@ data class SyncResult(
     val totalPendingRemaining: Int = 0,
     val timestamp: Long = System.currentTimeMillis(),
     val isSuccess: Boolean = true,
-    val message: String = ""
+    val message: String = "",
+    /** Pending records stamped with a different agent. They stay queued, unchanged. */
+    val otherAccountRecords: Int = 0
 )
 
 /**
@@ -52,7 +54,8 @@ interface ITraceHarvestRepository {
         latitude: Double,
         longitude: Double,
         cooperative: String = "",
-        agentId: String = "",
+        /** The signed-in agent. Required: every record is stamped with it. */
+        agentId: String,
         isOfflineMode: Boolean = true
     ): FarmerEntity
 
@@ -78,7 +81,8 @@ interface ITraceHarvestRepository {
         farmerDisplayId: String = farmerCode,
         nafdacRegNo: String = "",
         gpsCoordinates: String = "",
-        agentId: String = "",
+        /** The signed-in agent. Required: every record is stamped with it. */
+        agentId: String,
         syncStatus: String = "pending_sync"
     ): PracticeLogEntity
 
@@ -93,6 +97,8 @@ interface ITraceHarvestRepository {
         netWeightKg: Double,
         moisturePercent: Double,
         foreignMatterPercent: Double,
+        /** The signed-in agent. Required: every record is stamped with it. */
+        agentId: String,
         destinationMarket: String = "EU & United Kingdom"
     ): HarvestBatchEntity
 

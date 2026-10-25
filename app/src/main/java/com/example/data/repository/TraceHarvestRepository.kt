@@ -22,8 +22,20 @@ import kotlin.random.Random
 
 class TraceHarvestRepository(
     private val dao: TraceHarvestDao,
-    private val pendingSyncDao: PendingSyncDao? = null
+    private val pendingSyncDao: PendingSyncDao? = null,
+    /** The signed-in agent according to the stored session, or null when nobody is signed in. */
+    private val signedInAgentId: suspend () -> String? = { null }
 ) : ITraceHarvestRepository {
+
+    /** Every record must belong to a real, signed-in agent. There is no fallback identity. */
+    private fun requireAgentId(agentId: String): String {
+        require(agentId.isNotBlank()) { "Sign in before saving records: no signed-in agent." }
+        return agentId.trim()
+    }
+
+    private fun otherAccountMessage(count: Int): String =
+        if (count == 1) "1 record belongs to another account and stays on this device."
+        else "$count records belong to another account and stay on this device."
 
     override val allFarmers: Flow<List<FarmerEntity>> = dao.getAllFarmers()
     override val allPracticeLogs: Flow<List<PracticeLogEntity>> = dao.getAllPracticeLogs()
@@ -63,6 +75,7 @@ class TraceHarvestRepository(
         agentId: String,
         isOfflineMode: Boolean
     ): FarmerEntity = withContext(Dispatchers.IO) {
+        val stampedAgentId = requireAgentId(agentId)
         val statePrefix = state.take(3).uppercase(Locale.ROOT)
         val randomDigits = Random.nextInt(1000, 9999)
         val farmerCode = if (isOfflineMode) "TH-$statePrefix-PENDING-$randomDigits" else "TH-$statePrefix-2026-$randomDigits"
@@ -111,7 +124,7 @@ class TraceHarvestRepository(
             gpsPolygon = polygonString,
             syncStatus = if (isOfflineMode) "PENDING" else "SYNCED",
             isSynced = !isOfflineMode,
-            agentId = agentId
+            agentId = stampedAgentId
         )
 
         dao.insertFarmer(farmer)
@@ -123,7 +136,7 @@ class TraceHarvestRepository(
                     id = farmer.localId,
                     entityType = "FARMER",
                     entityId = farmer.localId,
-                    payload = """{"name":"${farmer.name}","phone":"${farmer.phone}","cropType":"${farmer.cropType}","agentId":"$agentId"}""",
+                    payload = """{"name":"${farmer.name}","phone":"${farmer.phone}","cropType":"${farmer.cropType}","agentId":"$stampedAgentId"}""",
                     status = "PENDING"
                 )
             )
@@ -157,6 +170,7 @@ class TraceHarvestRepository(
         agentId: String,
         syncStatus: String
     ): PracticeLogEntity = withContext(Dispatchers.IO) {
+        val stampedAgentId = requireAgentId(agentId)
         val farmerObj = dao.getFarmerByCode(farmerCode)
         val dosageStr = if (dosage.isNotBlank()) dosage else "$quantityUsed $quantityUnit"
 
@@ -203,7 +217,7 @@ class TraceHarvestRepository(
             verificationPhotoUri = verificationPhotoUri,
             photoVerificationType = "CONTAINER_LABEL",
             syncStatus = syncStatus,
-            agentId = agentId,
+            agentId = stampedAgentId,
             serverLoggedTimestamp = System.currentTimeMillis(),
             farmerClientUuid = farmerObj?.localId ?: ""
         )
@@ -227,9 +241,9 @@ class TraceHarvestRepository(
         val phone = farmerObj?.phoneNumber ?: dao.getFarmerByCode(farmerCode)?.phoneNumber
         if (phone != null) {
             val smsText = if (productName.isNotBlank()) {
-                "TraceHarvest: Agent $agentId logged $practiceType ($productName, $dosageStr) on your $crop farm. PHI: $effectivePhiDays days. Reply 1 to CONFIRM."
+                "TraceHarvest: Agent $stampedAgentId logged $practiceType ($productName, $dosageStr) on your $crop farm. PHI: $effectivePhiDays days. Reply 1 to CONFIRM."
             } else {
-                "TraceHarvest: Agent $agentId recorded $practiceType on your $crop farm today. Reply 1 to CONFIRM."
+                "TraceHarvest: Agent $stampedAgentId recorded $practiceType on your $crop farm today. Reply 1 to CONFIRM."
             }
             dao.insertSmsLog(
                 SmsLogEntity(
@@ -248,16 +262,33 @@ class TraceHarvestRepository(
     }
 
     override suspend fun syncAllPending(): SyncResult = withContext(Dispatchers.IO) {
-        val pendingFarmers = dao.getPendingSyncFarmers()
-        val pendingPractices = dao.getPendingSyncPracticeLogs()
+        // Only the signed-in agent's own records are sent, and only under that agent's ID.
+        val agentId = signedInAgentId()?.trim().orEmpty()
+        if (agentId.isBlank()) {
+            return@withContext SyncResult(
+                isSuccess = false,
+                message = "Sign in to sync. Your records are kept safely on this device."
+            )
+        }
+
+        val allPendingFarmers = dao.getPendingSyncFarmers()
+        val allPendingPractices = dao.getPendingSyncPracticeLogs()
+        val pendingFarmers = allPendingFarmers.filter { it.agentId == agentId }
+        val pendingPractices = allPendingPractices.filter { it.agentId == agentId }
+
+        // Records stamped with another agent are never relabelled and never sent: they stay queued.
+        val otherAccountRecords =
+            (allPendingFarmers.size - pendingFarmers.size) + (allPendingPractices.size - pendingPractices.size)
+        val otherNote = if (otherAccountRecords > 0) " " + otherAccountMessage(otherAccountRecords) else ""
 
         if (pendingFarmers.isEmpty() && pendingPractices.isEmpty()) {
             return@withContext SyncResult(
                 syncedFarmersCount = 0,
                 syncedPracticesCount = 0,
-                totalPendingRemaining = 0,
+                totalPendingRemaining = otherAccountRecords,
                 isSuccess = true,
-                message = "All records in SQLite ledger are already synchronized with the backend."
+                message = "All of your records are already synchronized with the backend.$otherNote",
+                otherAccountRecords = otherAccountRecords
             )
         }
 
@@ -303,10 +334,6 @@ class TraceHarvestRepository(
             )
         }
 
-        val agentId = pendingFarmers.firstOrNull()?.agentId
-            ?: pendingPractices.firstOrNull()?.agentId
-            ?: "AGENT-NG-042"
-
         val request = AgentBatchSyncRequest(
             agentId = agentId,
             deviceTimestampMs = System.currentTimeMillis(),
@@ -319,10 +346,11 @@ class TraceHarvestRepository(
             ?: return@withContext SyncResult(
                 syncedFarmersCount = 0,
                 syncedPracticesCount = 0,
-                totalPendingRemaining = pendingFarmers.size + pendingPractices.size,
+                totalPendingRemaining = pendingFarmers.size + pendingPractices.size + otherAccountRecords,
                 isSuccess = false,
-                message = NetworkClient.lastSyncRejection
-                    ?: "Could not reach the server. Records are kept on this device and will sync later."
+                message = (NetworkClient.lastSyncRejection
+                    ?: "Could not reach the server. Records are kept on this device and will sync later.") + otherNote,
+                otherAccountRecords = otherAccountRecords
             )
 
         // 1. Sync pending farmers -> Backend generates or confirms unique official Farmer ID
@@ -364,9 +392,10 @@ class TraceHarvestRepository(
         SyncResult(
             syncedFarmersCount = pendingFarmers.size,
             syncedPracticesCount = pendingPractices.size,
-            totalPendingRemaining = 0,
+            totalPendingRemaining = otherAccountRecords,
             isSuccess = true,
-            message = response.message
+            message = response.message + otherNote,
+            otherAccountRecords = otherAccountRecords
         )
     }
 
@@ -379,8 +408,10 @@ class TraceHarvestRepository(
         netWeightKg: Double,
         moisturePercent: Double,
         foreignMatterPercent: Double,
+        agentId: String,
         destinationMarket: String
     ): HarvestBatchEntity = withContext(Dispatchers.IO) {
+        val stampedAgentId = requireAgentId(agentId)
         val cropCode = crop.take(3).uppercase(Locale.ROOT)
         val randomNum = Random.nextInt(1000, 9999)
         val batchCode = "NG-$cropCode-2026-$randomNum-EXP"
@@ -431,6 +462,7 @@ class TraceHarvestRepository(
 
         val batch = HarvestBatchEntity(
             batchCode = batchCode,
+            agentId = stampedAgentId,
             crop = crop,
             farmerCode = farmerCode,
             farmerName = farmerName,
