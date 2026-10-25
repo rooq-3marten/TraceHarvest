@@ -1,5 +1,7 @@
 package com.example.data.remote
 
+import android.content.Context
+import com.example.core.auth.SessionManager
 import com.example.data.remote.api.TraceHarvestApiService
 import com.example.data.remote.model.AgentBatchSyncRequest
 import com.example.data.remote.model.AgentBatchSyncResponse
@@ -18,7 +20,19 @@ object NetworkClient {
 
     const val DEFAULT_SERVER_URL = "https://admindashtrace-backend.vercel.app/"
     private var customBaseUrl: String? = null
+    @Volatile
     private var authToken: String? = null
+
+    @Volatile
+    private var appContext: Context? = null
+
+    /**
+     * Call once from Application.onCreate, before any request is made. It enables silent token renewal,
+     * which needs the stored session. Without it (plain JVM tests) requests are sent without an authenticator.
+     */
+    fun initialize(context: Context) {
+        appContext = context.applicationContext
+    }
 
     fun getServerUrl(): String = customBaseUrl ?: DEFAULT_SERVER_URL
 
@@ -51,14 +65,25 @@ object NetworkClient {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC // Low memory overhead on budget processors
         }
-        OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .connectTimeout(35, TimeUnit.SECONDS) // Accommodates 2G/EDGE cellular handshake
             .readTimeout(45, TimeUnit.SECONDS)
             .writeTimeout(45, TimeUnit.SECONDS)
             .addInterceptor(AuthInterceptor(tokenProvider = { authToken }))
             .addInterceptor(logging)
             .retryOnConnectionFailure(true)
-            .build()
+
+        // Silent refresh: on a 401, renew the session token once and retry; end the session only if the refresh is rejected.
+        appContext?.let { ctx ->
+            builder.authenticator(
+                TokenRefreshAuthenticator(
+                    store = SessionManager.getInstance(ctx),
+                    api = { apiService },
+                    onAccessTokenChanged = { token -> authToken = token }
+                )
+            )
+        }
+        builder.build()
     }
 
     @Volatile
