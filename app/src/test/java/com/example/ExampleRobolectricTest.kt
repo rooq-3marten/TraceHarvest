@@ -120,6 +120,7 @@ class ExampleRobolectricTest {
   @Test
   fun `verify enrolled farmer identity provides localId displayId and gps polygon`() {
     val farmer = com.example.data.local.entity.FarmerEntity(
+      agentId = "TEST-AGENT-1",
       id = 42L,
       farmerCode = "TH-KAN-2026-1048",
       fullName = "Musa Ibrahim Dambatta",
@@ -182,6 +183,7 @@ class ExampleRobolectricTest {
   fun `verify practice log stores quantified dosage exact date and hardware sensors`() {
     val exactDate = 1758787200000L
     val log = com.example.data.local.entity.PracticeLogEntity(
+      agentId = "TEST-AGENT-1",
       id = 101L,
       farmerCode = "TH-KAN-2026-1048",
       farmerName = "Musa Ibrahim Dambatta",
@@ -230,6 +232,7 @@ class ExampleRobolectricTest {
     val dao = db.traceHarvestDao()
 
     val log = com.example.data.local.entity.PracticeLogEntity(
+      agentId = "TEST-AGENT-1",
       farmerCode = "TH-TEST-1",
       farmerName = "Test Farmer",
       crop = "Sesame",
@@ -246,7 +249,7 @@ class ExampleRobolectricTest {
     val pendingBefore = dao.getPendingSyncPracticeLogs()
     assertEquals(1, pendingBefore.size)
 
-    val repository = TraceHarvestRepository(dao)
+    val repository = TraceHarvestRepository(dao, signedInAgentId = { "TEST-AGENT-1" })
     val syncResult = repository.syncAllPending()
 
     assertTrue(syncResult.isSuccess)
@@ -267,16 +270,16 @@ class ExampleRobolectricTest {
   @Test
   fun `verify SessionManager stores and validates session token`() = kotlinx.coroutines.runBlocking {
     val context = ApplicationProvider.getApplicationContext<Context>()
-    val sessionManager = com.example.core.auth.SessionManager.getInstance(context)
+    val sessionManager = com.example.core.auth.SessionManager(context, FakeTokenCipher())
 
     // Save session
     sessionManager.saveSession(
       token = "jwt_test_token_12345",
       refreshToken = "rf_test_12345",
-      agentId = "AGENT-NG-042",
-      name = "Aminu Bello",
+      agentId = "TEST-AGENT-1",
+      name = "Test Agent",
       phone = "+2348031234567",
-      email = "aminu.bello@traceharvest.ng"
+      email = "test.agent@example.com"
     )
 
     assertTrue(sessionManager.hasValidSession())
@@ -326,6 +329,7 @@ class ExampleRobolectricTest {
   fun `verify duplicate farmer phone detection guards against duplicate registration`() {
     val existing = listOf(
       com.example.data.local.entity.FarmerEntity(
+        agentId = "TEST-AGENT-1",
         localId = "f1",
         name = "Musa Ibrahim",
         phoneNumber = "+2348031234567"

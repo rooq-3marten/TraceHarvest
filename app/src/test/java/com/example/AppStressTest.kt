@@ -53,7 +53,7 @@ class AppStressTest {
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = TraceHarvestRepository(database.traceHarvestDao())
+        repository = TraceHarvestRepository(database.traceHarvestDao(), signedInAgentId = { "TEST-AGENT-1" })
         ussdEngine = UssdEngine()
         smsEngine = SmsEngine()
 
@@ -79,6 +79,7 @@ class AppStressTest {
     fun `stress test ussd engine with 500 concurrent sessions and random navigation hops`() {
         runBlocking {
         val sampleFarmer = FarmerEntity(
+            agentId = "TEST-AGENT-1",
             id = 1,
             farmerCode = "TH-KAN-2026-1048",
             fullName = "Audu Abubakar",
@@ -95,6 +96,7 @@ class AppStressTest {
         )
 
         val sampleBatch = HarvestBatchEntity(
+            agentId = "TEST-AGENT-1",
             id = 1,
             batchCode = "NG-SES-2026-0042-EXP",
             crop = "Sesame",
@@ -229,6 +231,7 @@ class AppStressTest {
             val farmerJobs = (1..50).map { i ->
                 async(Dispatchers.IO) {
                     repository.registerFarmer(
+                        agentId = "TEST-AGENT-1",
                         fullName = "Stress Farmer #$i",
                         phoneNumber = "+234803" + (5000000 + i),
                         state = if (i % 2 == 0) "Kano" else "Jigawa",
@@ -253,6 +256,7 @@ class AppStressTest {
                 async(Dispatchers.IO) {
                     val assignedFarmer = farmers[i % farmers.size]
                     repository.createHarvestBatch(
+                        agentId = "TEST-AGENT-1",
                         farmerCode = assignedFarmer.farmerCode,
                         farmerName = assignedFarmer.fullName,
                         crop = assignedFarmer.crop,
@@ -278,6 +282,7 @@ class AppStressTest {
         runBlocking {
             // Zero bags and micro-weight (edge case)
             val minBatch = repository.createHarvestBatch(
+                agentId = "TEST-AGENT-1",
                 farmerCode = "TH-KAN-2026-9999",
                 farmerName = "Micro Farmer",
                 crop = "Sesame",
@@ -294,6 +299,7 @@ class AppStressTest {
 
             // High moisture aflatoxin violation (18.5% moisture)
             val wetBatch = repository.createHarvestBatch(
+                agentId = "TEST-AGENT-1",
                 farmerCode = "TH-JIG-2026-8888",
                 farmerName = "High Moisture Farmer",
                 crop = "Soybeans",
@@ -331,6 +337,7 @@ class AppStressTest {
 
             for (variant in bannedEvasionVariants) {
                 val log = repository.logPractice(
+                    agentId = "TEST-AGENT-1",
                     farmerCode = "TH-EVASION-TEST",
                     farmerName = "Evasion Tester",
                     crop = "Sesame",
@@ -354,6 +361,7 @@ class AppStressTest {
 
             // Verify that subsequent batch creation for this farmer is automatically blocked
             val batch = repository.createHarvestBatch(
+                agentId = "TEST-AGENT-1",
                 farmerCode = "TH-EVASION-TEST",
                 farmerName = "Evasion Tester",
                 crop = "Sesame",
@@ -392,7 +400,7 @@ class AppStressTest {
                     latitude = 12.0 + (i * 0.01),
                     longitude = 8.5 + (i * 0.01),
                     cooperative = "Coop $i",
-                    agentId = "AGENT-NG-042",
+                    agentId = "TEST-AGENT-1",
                     isOfflineMode = true
                 )
             }
@@ -451,11 +459,12 @@ class AppStressTest {
                         latitude = 11.0855,
                         longitude = 7.7199,
                         cooperative = "Zaria Soy",
-                        agentId = "AGENT-LOAD",
+                        agentId = "TEST-AGENT-1",
                         isOfflineMode = index % 2 == 0
                     )
 
                     repository.logPractice(
+                        agentId = "TEST-AGENT-1",
                         farmerCode = code,
                         farmerName = "Overworked Farmer $index",
                         crop = "Soybeans",
