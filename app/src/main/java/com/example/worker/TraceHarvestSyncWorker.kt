@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.example.core.auth.SessionManager
 import com.example.data.local.AppDatabase
 import com.example.data.repository.TraceHarvestRepository
 
@@ -30,7 +31,11 @@ class TraceHarvestSyncWorker(
 
         return try {
             val database = AppDatabase.getDatabase(applicationContext)
-            val repository = TraceHarvestRepository(database.traceHarvestDao(), database.pendingSyncDao())
+            val repository = TraceHarvestRepository(
+                database.traceHarvestDao(),
+                database.pendingSyncDao(),
+                signedInAgentId = { SessionManager.getInstance(applicationContext).currentAgentIdOrNull() }
+            )
 
             val result = repository.syncAllPending()
 
