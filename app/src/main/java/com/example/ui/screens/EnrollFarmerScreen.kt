@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun EnrollFarmerScreen(
     enrolledFarmers: List<FarmerEntity>,
-    agentId: String = "AGENT-NG-042",
+    agentId: String,
     zone: GeopoliticalZone = GeopoliticalZone.NW,
     onNavigateToPractice: () -> Unit = {},
     onNavigateToSync: () -> Unit = {},

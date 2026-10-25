@@ -82,6 +82,7 @@ fun SyncRecordsScreen(
     totalPendingCount: Int,
     isSyncing: Boolean,
     agentId: String = "",
+    otherAccountCount: Int = 0,
     onSyncAll: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -98,6 +99,37 @@ fun SyncRecordsScreen(
             .testTag("sync_records_screen"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (otherAccountCount > 0) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("other_account_records_banner"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = if (otherAccountCount == 1) {
+                                "1 record belongs to another account"
+                            } else {
+                                "$otherAccountCount records belong to another account"
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF5D4037)
+                        )
+                        Text(
+                            text = "They stay on this device and will sync when that agent signs in. They are not sent from this account.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF5D4037)
+                        )
+                    }
+                }
+            }
+        }
+
         item {
             Spacer(modifier = Modifier.height(4.dp))
             Card(

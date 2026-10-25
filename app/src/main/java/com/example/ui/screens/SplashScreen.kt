@@ -63,9 +63,11 @@ fun SplashScreen(
         // 1.5 seconds brand presentation
         delay(1500)
 
-        if (hasSession) {
-            val cachedProfile = sessionManager.getCachedProfile()
-            val token = sessionManager.getAuthToken()
+        val cachedProfile = sessionManager.getCachedProfile()
+
+        // No stored session, or no stored agent identity: go to Login. Nothing is ever assumed.
+        if (hasSession && cachedProfile.agentId.isNotBlank()) {
+            val token = sessionManager.currentAccessToken()
             if (token != null) {
                 NetworkClient.setAuthToken(token)
             }
@@ -78,6 +80,13 @@ fun SplashScreen(
                 } catch (e: Exception) {
                     null
                 }
+            }
+
+            // The status call may have triggered a silent token refresh. If the server rejected it,
+            // the session has been cleared: return to Login instead of showing stale data.
+            if (!sessionManager.hasValidSession()) {
+                onNavigateToLogin()
+                return@LaunchedEffect
             }
 
             val finalStatus = if (liveStatusResponse != null) {
