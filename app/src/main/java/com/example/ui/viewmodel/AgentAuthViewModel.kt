@@ -131,6 +131,11 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
         _keepMeSignedIn.value = keep
     }
 
+    /** Shown on the Login screen after a silent token refresh was rejected. */
+    fun showSessionExpired() {
+        _errorMessage.value = "Session expired, please sign in"
+    }
+
     fun clearError() {
         _errorMessage.value = null
     }

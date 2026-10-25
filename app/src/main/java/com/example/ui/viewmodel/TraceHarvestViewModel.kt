@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.auth.SessionManager
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.HarvestBatchEntity
@@ -17,6 +18,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+// Same statuses the DAO treats as "waiting to sync"
+private val PENDING_STATUSES = setOf("PENDING", "pending_sync", "FAILED")
+
+private const val SIGNED_OUT_MESSAGE = "You are signed out. Sign in again to save records."
 
 enum class AppTab(val title: String) {
     HOME_DASHBOARD("Field Home"),
@@ -42,12 +48,22 @@ class TraceHarvestViewModel @JvmOverloads constructor(
 ) : AndroidViewModel(application) {
 
     // Set from the signed-in agent's profile (see TraceHarvestApp); never hardcoded.
-    var currentAgentId: String = ""
+    private val _currentAgentId = MutableStateFlow("")
+    var currentAgentId: String
+        get() = _currentAgentId.value
+        set(value) {
+            _currentAgentId.value = value
+        }
 
     private val repository: ITraceHarvestRepository = repositoryInstance 
         ?: run {
             val db = AppDatabase.getDatabase(application)
-            TraceHarvestRepository(db.traceHarvestDao(), db.pendingSyncDao())
+            TraceHarvestRepository(
+                db.traceHarvestDao(),
+                db.pendingSyncDao(),
+                // Sync uses the agent from the stored session, not from whichever record happens to be first
+                signedInAgentId = { SessionManager.getInstance(application).currentAgentIdOrNull() }
+            )
         }
 
     val allFarmers: StateFlow<List<FarmerEntity>>
@@ -87,6 +103,10 @@ class TraceHarvestViewModel @JvmOverloads constructor(
         hubName: String,
         contributingFarmerIds: List<String>
     ) {
+        if (currentAgentId.isBlank()) {
+            _userMessage.value = SIGNED_OUT_MESSAGE
+            return
+        }
         viewModelScope.launch {
             try {
                 repository.createHarvestBatch(
@@ -98,6 +118,7 @@ class TraceHarvestViewModel @JvmOverloads constructor(
                     netWeightKg = quantityKg,
                     moisturePercent = 7.4,
                     foreignMatterPercent = 0.5,
+                    agentId = currentAgentId,
                     destinationMarket = "EU & Asia"
                 )
                 _userMessage.value = "Export batch $batchCode registered successfully for $hubName."
@@ -114,6 +135,9 @@ class TraceHarvestViewModel @JvmOverloads constructor(
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
     val dashboardMetrics: StateFlow<DashboardMetrics>
+
+    /** Pending records that were saved under a different agent. They are not synced from this account. */
+    val otherAccountPendingCount: StateFlow<Int>
 
     init {
         allFarmers = repository.allFarmers.stateIn(
@@ -174,6 +198,19 @@ class TraceHarvestViewModel @JvmOverloads constructor(
             DashboardMetrics()
         )
 
+        otherAccountPendingCount = combine(allFarmers, allPracticeLogs, _currentAgentId) { farmers, logs, agentId ->
+            if (agentId.isBlank()) {
+                0
+            } else {
+                farmers.count { it.syncStatus in PENDING_STATUSES && it.agentId != agentId } +
+                    logs.count { it.syncStatus in PENDING_STATUSES && it.agentId != agentId }
+            }
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
+
         viewModelScope.launch {
             repository.checkAndSeedInitialData()
         }
@@ -211,6 +248,10 @@ class TraceHarvestViewModel @JvmOverloads constructor(
         cooperative: String,
         isOfflineMode: Boolean = true
     ) {
+        if (currentAgentId.isBlank()) {
+            _userMessage.value = SIGNED_OUT_MESSAGE
+            return
+        }
         viewModelScope.launch {
             try {
                 val farmer = repository.registerFarmer(
@@ -272,6 +313,10 @@ class TraceHarvestViewModel @JvmOverloads constructor(
         gpsCoordinates: String = "",
         syncStatus: String = "pending_sync"
     ) {
+        if (currentAgentId.isBlank()) {
+            _userMessage.value = SIGNED_OUT_MESSAGE
+            return
+        }
         viewModelScope.launch {
             try {
                 val log = repository.logPractice(
