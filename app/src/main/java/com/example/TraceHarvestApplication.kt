@@ -30,6 +30,9 @@ class TraceHarvestApplication : Application(), Configuration.Provider {
         // 1. Install global CrashGuard against unhandled crashes and structural failures
         com.example.core.resilience.CrashGuard.install(this)
 
+        // Enables silent session renewal for every API call
+        NetworkClient.initialize(this)
+
         // 2. Register periodic background sync with NetworkType.CONNECTED constraint
         SyncManager.initialize(this)
 
@@ -37,7 +40,8 @@ class TraceHarvestApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             try {
                 val sessionManager = SessionManager.getInstance(this@TraceHarvestApplication)
-                val token = sessionManager.getAuthToken()
+                // The stored token even if it is past its original expiry: a 401 triggers the silent refresh.
+                val token = if (sessionManager.hasValidSession()) sessionManager.currentAccessToken() else null
                 if (!token.isNullOrBlank()) {
                     NetworkClient.setAuthToken(token)
                     Log.i("TraceHarvestApp", "Active session restored for agent")
