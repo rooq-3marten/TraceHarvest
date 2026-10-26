@@ -36,14 +36,23 @@ object CrashGuard {
                 Log.e(TAG, "Structural failure intercepted in thread: ${thread.name}", throwable)
                 recordEmergencyCrash(context, thread, throwable)
 
-                // Mark recovered flag
+                val isJvmTest = Build.FINGERPRINT.equals("robolectric", ignoreCase = true)
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val now = System.currentTimeMillis()
+                val prevCrash = prefs.getLong(KEY_LAST_CRASH_TIME, 0L)
+                val isRapidCrashLoop = prevCrash > 0L && (now - prevCrash) < 15_000L
+
                 prefs.edit()
                     .putBoolean(KEY_RECOVERED_FROM_CRASH, true)
-                    .putLong(KEY_LAST_CRASH_TIME, System.currentTimeMillis())
-                    .apply()
+                    .putLong(KEY_LAST_CRASH_TIME, now)
+                    .commit()
 
-                // Gracefully restart MainActivity to prevent application crash loop
+                if (isJvmTest || isRapidCrashLoop) {
+                    defaultHandler?.uncaughtException(thread, throwable)
+                    return@setDefaultUncaughtExceptionHandler
+                }
+
+                // Gracefully restart MainActivity once to recover session
                 val restartIntent = Intent(context, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     putExtra("EXTRA_RECOVERED_FROM_CRASH", true)

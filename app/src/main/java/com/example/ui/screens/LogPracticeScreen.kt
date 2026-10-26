@@ -98,9 +98,11 @@ import com.example.data.catalog.AgrochemicalCategory
 import com.example.data.catalog.NafdacAgrochemical
 import com.example.data.catalog.NafdacCatalog
 import com.example.data.catalog.NafdacExportCompliance
+import com.example.core.zone.GeopoliticalZone
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.PracticeLogEntity
 import com.example.ui.components.DropdownSectionHeader
+import com.example.ui.components.FarmerAvatarView
 import com.example.ui.theme.ComplianceGreen
 import com.example.ui.theme.HarvestGreenPrimary
 import com.example.ui.theme.ViolationRed
@@ -269,11 +271,11 @@ fun LogPracticeScreen(
     }
 
     // Live auto-captured phone GPS
-    var liveLat by remember { mutableDoubleStateOf(currentFarmer.latitude) }
-    var liveLng by remember { mutableDoubleStateOf(currentFarmer.longitude) }
-    var gpsAcc by remember { mutableFloatStateOf(2.2f) }
+    var liveLat by remember(currentFarmer.localId) { mutableDoubleStateOf(currentFarmer.latitude) }
+    var liveLng by remember(currentFarmer.localId) { mutableDoubleStateOf(currentFarmer.longitude) }
+    var gpsAcc by remember { mutableFloatStateOf(0.0f) }
 
-    var practiceLocationName by remember { mutableStateOf("Dambatta Farm Plot, Kano") }
+    var practiceLocationName by remember { mutableStateOf("") }
 
     LaunchedEffect(liveLat, liveLng, currentFarmer) {
         practiceLocationName = GeoLocationNamingService.resolveLocationName(
@@ -473,14 +475,11 @@ fun LogPracticeScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.img_farmer_portrait),
-                                contentDescription = "Farmer Photo",
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .border(1.5.dp, HarvestGreenPrimary, CircleShape),
-                                contentScale = ContentScale.Crop
+                            FarmerAvatarView(
+                                photoPath = currentFarmer.photoPath,
+                                farmerName = currentFarmer.fullName,
+                                zone = GeopoliticalZone.NW,
+                                size = 44.dp
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
@@ -869,26 +868,28 @@ fun LogPracticeScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text(
-                                        text = "📍 $practiceLocationName",
+                                        text = "📍 ${practiceLocationName.ifBlank { "Farm Plot" }}",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF1B5E20)
                                     )
-                                    Surface(
-                                        color = if (gpsAcc <= 3.0f) Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = if (gpsAcc <= 3.0f) "EXPORT GRADE (<3m)" else "±${"%.1f".format(gpsAcc)}m",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (gpsAcc <= 3.0f) Color(0xFF2E7D32) else Color(0xFFF57F17),
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
+                                    if (gpsAcc > 0f) {
+                                        Surface(
+                                            color = Color(0xFFE8F5E9),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "±${"%.1f".format(gpsAcc)}m",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF2E7D32),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
                                     }
                                 }
                                 Text(
-                                    text = "${"%.6f".format(liveLat)}°N, ${"%.6f".format(liveLng)}°E (EUDR Geo-Stamped)",
+                                    text = "${"%.6f".format(liveLat)}°N, ${"%.6f".format(liveLng)}°E",
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = Color(0xFF33691E)
@@ -968,13 +969,14 @@ fun LogPracticeScreen(
                     )
                 }
             } else {
-                items(recentLogs.take(12), key = { it.id }) { log ->
+                items(recentLogs.take(12), key = { it.localId }) { log ->
             val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(log.dateApplied))
+            val isLogSynced = log.isSynced || log.syncStatus.equals("synced", ignoreCase = true)
 
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("practice_log_item_${log.id}"),
+                    .testTag("practice_log_item_${log.localId}"),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(10.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E9E2))
@@ -996,7 +998,7 @@ fun LogPracticeScreen(
                                     fontSize = 13.sp
                                 )
                                 Surface(
-                                    color = if (log.syncStatus == "synced") Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
+                                    color = if (isLogSynced) Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
@@ -1004,7 +1006,7 @@ fun LogPracticeScreen(
                                         fontSize = 9.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (log.syncStatus == "synced") ComplianceGreen else WarningAmber,
+                                        color = if (isLogSynced) ComplianceGreen else WarningAmber,
                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                     )
                                 }
@@ -1054,7 +1056,7 @@ fun LogPracticeScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "VERIFIED GPS",
+                                text = "GPS RECORDED",
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = ComplianceGreen,

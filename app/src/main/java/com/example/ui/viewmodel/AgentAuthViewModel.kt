@@ -31,13 +31,13 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isPhoneMode = MutableStateFlow(false)
     val isPhoneMode: StateFlow<Boolean> = _isPhoneMode.asStateFlow()
 
-    private val _phoneNumber = MutableStateFlow("+2348031234567")
+    private val _phoneNumber = MutableStateFlow("")
     val phoneNumber: StateFlow<String> = _phoneNumber.asStateFlow()
 
-    private val _pin = MutableStateFlow("1234")
+    private val _pin = MutableStateFlow("")
     val pin: StateFlow<String> = _pin.asStateFlow()
 
-    private val _email = MutableStateFlow("supervisor.kano@traceharvest.ng")
+    private val _email = MutableStateFlow("")
     val email: StateFlow<String> = _email.asStateFlow()
 
     private val _password = MutableStateFlow("")
@@ -56,10 +56,10 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
     private val _signUpAssociation = MutableStateFlow("")
     val signUpAssociation: StateFlow<String> = _signUpAssociation.asStateFlow()
 
-    private val _signUpLocation = MutableStateFlow("Dambatta, Kano State")
+    private val _signUpLocation = MutableStateFlow("")
     val signUpLocation: StateFlow<String> = _signUpLocation.asStateFlow()
 
-    private val _signUpPhone = MutableStateFlow("+234")
+    private val _signUpPhone = MutableStateFlow("")
     val signUpPhone: StateFlow<String> = _signUpPhone.asStateFlow()
 
     private val _signUpPassword = MutableStateFlow("")
@@ -300,7 +300,7 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
                 ) {
                     sessionManager.saveSession(
                         token = token,
-                        refreshToken = null,
+                        refreshToken = body.refreshToken,
                         agentId = newAgentId,
                         name = body.fullName.ifBlank { req.fullName },
                         phone = body.phoneNumber.ifBlank { req.phoneNumber },
@@ -511,6 +511,12 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
             val statusResult = fetchAgentStatusFromServer()
             _isLoading.value = false
 
+            // If silent refresh was rejected during the status call, the session has already
+            // been expired and routed to Login — do not emit a fallback status.
+            if (!sessionManager.hasValidSession()) {
+                return@launch
+            }
+
             if (statusResult != null) {
                 val newStatus = AgentApprovalStatus.fromRaw(statusResult.status)
                 sessionManager.updateAgentStatus(
@@ -523,9 +529,11 @@ class AgentAuthViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 onResult(newStatus)
             } else {
-                // If offline, return current cached status
+                // If offline, return current cached status only if an agent profile exists
                 val cached = sessionManager.getCachedProfile()
-                onResult(cached.status)
+                if (cached.agentId.isNotBlank()) {
+                    onResult(cached.status)
+                }
             }
         }
     }

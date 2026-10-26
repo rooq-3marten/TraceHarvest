@@ -32,7 +32,7 @@ import java.util.Calendar
 fun HomeDashboardScreen(
     agentName: String = "",
     agentAssociation: String = "",
-    agentLocation: String = "Dambatta, Kano State",
+    agentLocation: String = "",
     currentZone: GeopoliticalZone,
     totalFarmersCount: Int,
     totalPracticesCount: Int,
@@ -122,23 +122,26 @@ fun HomeDashboardScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Group, contentDescription = null, tint = ForestGreenSecondary, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(agentAssociation, fontSize = 12.sp, color = MutedBrownText, maxLines = 1)
+                    if (agentAssociation.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Group, contentDescription = null, tint = ForestGreenSecondary, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(agentAssociation, fontSize = 12.sp, color = MutedBrownText, maxLines = 1)
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Place, contentDescription = null, tint = ForestGreenSecondary, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(agentLocation, fontSize = 12.sp, color = MutedBrownText, maxLines = 1)
+                    if (agentLocation.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Place, contentDescription = null, tint = ForestGreenSecondary, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(agentLocation, fontSize = 12.sp, color = MutedBrownText, maxLines = 1)
+                        }
                     }
                 }
             }

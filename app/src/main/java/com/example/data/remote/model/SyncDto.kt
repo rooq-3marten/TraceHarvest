@@ -15,9 +15,9 @@ data class FarmerSyncDto(
     @field:Json(name = "phone_number")
     val phoneNumber: String,
     @field:Json(name = "state")
-    val state: String = "Kano",
+    val state: String = "",
     @field:Json(name = "lga")
-    val lga: String = "Dambatta",
+    val lga: String = "",
     @field:Json(name = "community")
     val community: String = "",
     @field:Json(name = "crop")
@@ -72,7 +72,7 @@ data class PracticeLogSyncDto(
     @field:Json(name = "gps_coordinates")
     val gpsCoordinates: String = "",
     @field:Json(name = "risk_level")
-    val riskLevel: String = "COMPLIANT",
+    val riskLevel: String = "",
     @field:Json(name = "agent_id")
     val agentId: String = "",
     @field:Json(name = "verification_photo_uri")
@@ -89,11 +89,11 @@ data class BatchSyncDto(
     @field:Json(name = "batch_code")
     val batchCode: String,
     @field:Json(name = "crop")
-    val crop: String = "Sesame",
+    val crop: String = "",
     @field:Json(name = "total_quantity")
     val totalQuantity: Double = 0.0,
     @field:Json(name = "quality_grade")
-    val qualityGrade: String = "Grade A Export Ready",
+    val qualityGrade: String = "",
     @field:Json(name = "aggregation_gps_lat")
     val aggregationGpsLat: Double? = null,
     @field:Json(name = "aggregation_gps_lng")
@@ -263,7 +263,9 @@ data class AgentStatusResponse(
     @field:Json(name = "rejection_reason")
     val rejectionReason: String? = null,
     @field:Json(name = "access_token")
-    val accessToken: String? = null
+    val accessToken: String? = null,
+    @field:Json(name = "refresh_token")
+    val refreshToken: String? = null
 )
 
 /**

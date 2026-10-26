@@ -51,7 +51,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 1. Upstream Sync Ingestion Endpoint (Called by Android App)
 // ==============================================================
 app.post('/api/v1/sync/upstream', (req, res) => {
-  const { agent_id, device_timestamp_ms, farmers = [], practices = [] } = req.body;
+  const { agent_id, device_timestamp_ms, farmers = [], practices = [], batches = [] } = req.body;
 
   if (!agent_id) {
     return res.status(400).json({ error: 'agent_id is required' });
@@ -77,6 +77,7 @@ app.post('/api/v1/sync/upstream', (req, res) => {
 
       db.farmers[clientUuid] = {
         ...farmer,
+        agent_id: farmer.agent_id || agent_id,
         official_farmer_id: officialId,
         server_received_at: serverTimestamp
       };
@@ -99,6 +100,7 @@ app.post('/api/v1/sync/upstream', (req, res) => {
 
       db.practices.push({
         ...practice,
+        agent_id: practice.agent_id || agent_id,
         phi_cleared: isPhiCleared,
         safe_harvest_date_ms: safeHarvestMs,
         server_received_at: serverTimestamp
@@ -106,29 +108,58 @@ app.post('/api/v1/sync/upstream', (req, res) => {
     }
   }
 
-  // 3. Log Sync Event
+  // 3. Process Consignment Batches (Idempotent by client_uuid or batch_code)
+  for (const batch of batches) {
+    const key = batch.client_uuid || batch.batch_code;
+    if (!key) continue;
+
+    const exists = db.batches.some(b =>
+      (batch.client_uuid && b.client_uuid === batch.client_uuid) ||
+      (batch.batch_code && b.batch_number === batch.batch_code)
+    );
+    if (!exists) {
+      const batchNumber = batch.batch_code || `TH-BATCH-${serverTimestamp}`;
+      db.batches.unshift({
+        id: db.batches.length + 1,
+        client_uuid: batch.client_uuid || null,
+        batch_number: batchNumber,
+        crop: batch.crop || '',
+        destination: batch.destination_market || batch.region || '',
+        farmer_count: Array.isArray(batch.contributing_farmer_ids) ? batch.contributing_farmer_ids.length : 0,
+        estimated_tonnage: Math.round(((parseFloat(batch.weight_kg) || 0) / 1000) * 100) / 100,
+        created_at_ms: batch.created_at_epoch_ms || serverTimestamp,
+        agent_id: batch.agent_id || agent_id,
+        export_clearance_status: batch.mrl_status || batch.quality_grade || 'RECORDED',
+        tamper_proof_sha256: require('crypto').createHash('sha256').update(batchNumber + ':' + agent_id).digest('hex')
+      });
+    }
+  }
+
+  // 4. Log Sync Event
   db.syncLogs.unshift({
     agent_id,
     device_timestamp_ms,
     server_timestamp_ms: serverTimestamp,
     farmers_count: farmers.length,
-    practices_count: practices.length
+    practices_count: practices.length,
+    batches_count: batches.length
   });
 
   if (db.syncLogs.length > 50) db.syncLogs.pop();
 
   persistData();
 
-  console.log(`[Sync] Agent ${agent_id} uploaded ${farmers.length} farmers and ${practices.length} practices.`);
+  console.log(`[Sync] Agent ${agent_id} uploaded ${farmers.length} farmers, ${practices.length} practices, ${batches.length} batches.`);
 
   // Return standard AgentBatchSyncResponse
   res.json({
     status: 'synced',
     synced_farmers_count: farmers.length,
     synced_practices_count: practices.length,
+    synced_batches_count: batches.length,
     assigned_farmer_ids: assignedFarmerIds,
     server_timestamp_ms: serverTimestamp,
-    message: `Batch processed with client_uuid idempotency (${farmers.length} farmers, ${practices.length} practices)`
+    message: `Batch processed with client_uuid idempotency (${farmers.length} farmers, ${practices.length} practices, ${batches.length} batches)`
   });
 });
 
@@ -140,7 +171,11 @@ app.post('/api/v1/sync/upstream', (req, res) => {
 app.get('/api/v1/admin/stats', (req, res) => {
   const farmersList = Object.values(db.farmers);
   const totalHectares = farmersList.reduce((acc, f) => acc + (parseFloat(f.farm_size_hectares) || 0), 0);
-  const nonCompliantPractices = db.practices.filter(p => !p.nafdac_approved || p.risk_level === 'FLAGGED_HIGH_RISK').length;
+  const nonCompliantPractices = db.practices.filter(
+    p => p.nafdac_approved === false ||
+         p.risk_level === 'BANNED_MRL_VIOLATION' ||
+         p.risk_level === 'FLAGGED_HIGH_RISK'
+  ).length;
   const activePhiHoldCount = db.practices.filter(p => !p.phi_cleared).length;
 
   res.json({
@@ -188,18 +223,24 @@ app.get('/api/v1/admin/batches', (req, res) => {
 });
 
 app.post('/api/v1/admin/batches/create', (req, res) => {
-  const { crop, destination, farmer_client_uuids = [], estimated_tonnage = 20.0 } = req.body;
+  const { crop, destination, farmer_client_uuids = [], estimated_tonnage = 0 } = req.body;
+  if (!crop || !String(crop).trim()) {
+    return res.status(400).json({ error: 'crop is required' });
+  }
   const batchNumber = `EXP-TH-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+  const validFarmers = Array.isArray(farmer_client_uuids)
+    ? farmer_client_uuids.filter(uuid => Boolean(db.farmers[uuid]))
+    : [];
 
   const newBatch = {
     id: db.batches.length + 1,
     batch_number: batchNumber,
-    crop: crop || 'Sesame',
-    destination: destination || 'Rotterdam, Netherlands (EU)',
-    farmer_count: farmer_client_uuids.length,
-    estimated_tonnage: parseFloat(estimated_tonnage) || 20.0,
+    crop: String(crop).trim(),
+    destination: String(destination || '').trim(),
+    farmer_count: validFarmers.length,
+    estimated_tonnage: Math.max(0, parseFloat(estimated_tonnage) || 0),
     created_at_ms: Date.now(),
-    export_clearance_status: 'CERTIFIED_COMPLIANT',
+    export_clearance_status: validFarmers.length > 0 ? 'RECORDED' : 'UNLINKED_DRAFT',
     tamper_proof_sha256: require('crypto').createHash('sha256').update(batchNumber + Date.now()).digest('hex')
   };
 
@@ -208,13 +249,32 @@ app.post('/api/v1/admin/batches/create', (req, res) => {
   res.json({ success: true, batch: newBatch });
 });
 
-// CSV Export for Regulatory Compliance
+function escapeCsvCell(value) {
+  const raw = value == null ? '' : String(value);
+  const safeFormula = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safeFormula.replace(/"/g, '""')}"`;
+}
+
+// CSV Export for Registry Records
 app.get('/api/v1/admin/export/csv', (req, res) => {
   const farmersList = Object.values(db.farmers);
   let csv = 'Official Farmer ID,Client UUID,Full Name,Phone,State,LGA,Community,Crop,Hectares,Latitude,Longitude,Agent ID\n';
 
   farmersList.forEach(f => {
-    csv += `"${f.official_farmer_id}","${f.client_uuid}","${f.full_name}","${f.phone_number}","${f.state}","${f.lga}","${f.community || ''}","${f.crop}","${f.farm_size_hectares}","${f.latitude}","${f.longitude}","${f.agent_id}"\n`;
+    csv += [
+      f.official_farmer_id,
+      f.client_uuid,
+      f.full_name,
+      f.phone_number,
+      f.state,
+      f.lga,
+      f.community || '',
+      f.crop,
+      f.farm_size_hectares,
+      f.latitude,
+      f.longitude,
+      f.agent_id
+    ].map(escapeCsvCell).join(',') + '\n';
   });
 
   res.setHeader('Content-Type', 'text/csv');

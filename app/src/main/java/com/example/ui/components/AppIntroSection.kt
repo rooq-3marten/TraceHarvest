@@ -190,35 +190,40 @@ fun AppIntroBanner(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Human Farmer Photo & Overview Card
+                    // Overview Card
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.img_farmer_portrait),
-                            contentDescription = "Nigerian smallholder farmer in crop field",
+                        Box(
                             modifier = Modifier
-                                .weight(0.38f)
-                                .height(105.dp)
+                                .size(64.dp)
                                 .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFE8F5E9))
                                 .border(1.dp, Color(0xFFC8E6C9), RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Agriculture,
+                                contentDescription = null,
+                                tint = HarvestGreenPrimary,
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
 
                         Column(
-                            modifier = Modifier.weight(0.62f),
+                            modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "Field-to-Export Compliance",
+                                text = "Field-to-Registry Traceability",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = HarvestGreenPrimary
                             )
                             Text(
-                                text = "Enables agents to register smallholders and record seasonal farm inputs with zero internet. Captures GPS, calculates chemical safe dates, and guarantees export market readiness.",
+                                text = "Enables signed-in field agents to register smallholders and record seasonal farm inputs offline. Captures GPS coordinates, calculates chemical Pre-Harvest Intervals, and queues records for central sync.",
                                 fontSize = 11.sp,
                                 color = Color(0xFF37474F),
                                 lineHeight = 15.sp
@@ -525,7 +530,7 @@ fun AppGuideDialog(
                     GuideSection(
                         icon = Icons.Default.Shield,
                         title = "What is TraceHarvest For?",
-                        content = "TraceHarvest solves agricultural provenance for Nigerian export cash crops (Sesame, Cowpea, Ginger, Hibiscus, Soybeans, Cashew). It ensures smallholder crops meet international standards (EU Deforestation Regulation EUDR and Maximum Residue Limits MRLs) before aggregation."
+                        content = "TraceHarvest records agricultural provenance for Nigerian cash crops (Sesame, Cowpea, Ginger, Hibiscus, Soybeans, Cashew), tracking farm GPS locations, agrochemical applications, and Pre-Harvest Intervals prior to aggregation."
                     )
 
                     // Section 2: Zero-Literacy Principle

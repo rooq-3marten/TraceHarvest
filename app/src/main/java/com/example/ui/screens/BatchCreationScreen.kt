@@ -58,9 +58,9 @@ fun BatchCreationScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val gradeOptions = listOf(
-        Pair("Grade A Export Ready", "Moisture < 8.0%, zero chemical residue, certified organic/GAP compliant"),
-        Pair("Grade B Secondary Processing", "Moisture 8.1–10.0%, compliant for domestic food milling"),
-        Pair("Grade C Under-Conditioned", "Moisture > 10.0%, quarantined for mechanical drying")
+        Pair("Grade A Export Ready", "Moisture < 8.0%, low foreign matter (< 1.0%)"),
+        Pair("Grade B Secondary Processing", "Moisture 8.1–10.0%, suitable for domestic food milling"),
+        Pair("Grade C Under-Conditioned", "Moisture > 10.0%, held for mechanical drying")
     )
 
     Surface(
@@ -321,7 +321,7 @@ fun BatchCreationScreen(
                         )
                     }
                 } else {
-                    items(availableFarmers) { farmer ->
+                    items(availableFarmers, key = { it.localId }) { farmer ->
                         val isChecked = selectedFarmerIds.contains(farmer.localId)
                         Card(
                             modifier = Modifier

@@ -10,6 +10,7 @@ import com.example.data.local.entity.PracticeLogEntity
 import com.example.data.local.entity.SmsLogEntity
 import com.example.data.remote.NetworkClient
 import com.example.data.remote.model.AgentBatchSyncRequest
+import com.example.data.remote.model.BatchSyncDto
 import com.example.data.remote.model.FarmerSyncDto
 import com.example.data.remote.model.PracticeLogSyncDto
 import kotlinx.coroutines.Dispatchers
@@ -273,15 +274,19 @@ class TraceHarvestRepository(
 
         val allPendingFarmers = dao.getPendingSyncFarmers()
         val allPendingPractices = dao.getPendingSyncPracticeLogs()
+        val allPendingBatches = dao.getPendingSyncBatches()
         val pendingFarmers = allPendingFarmers.filter { it.agentId == agentId }
         val pendingPractices = allPendingPractices.filter { it.agentId == agentId }
+        val pendingBatches = allPendingBatches.filter { it.agentId == agentId }
 
         // Records stamped with another agent are never relabelled and never sent: they stay queued.
         val otherAccountRecords =
-            (allPendingFarmers.size - pendingFarmers.size) + (allPendingPractices.size - pendingPractices.size)
+            (allPendingFarmers.size - pendingFarmers.size) +
+                (allPendingPractices.size - pendingPractices.size) +
+                (allPendingBatches.size - pendingBatches.size)
         val otherNote = if (otherAccountRecords > 0) " " + otherAccountMessage(otherAccountRecords) else ""
 
-        if (pendingFarmers.isEmpty() && pendingPractices.isEmpty()) {
+        if (pendingFarmers.isEmpty() && pendingPractices.isEmpty() && pendingBatches.isEmpty()) {
             return@withContext SyncResult(
                 syncedFarmersCount = 0,
                 syncedPracticesCount = 0,
@@ -334,11 +339,27 @@ class TraceHarvestRepository(
             )
         }
 
+        val batchDtos = pendingBatches.map { batch ->
+            BatchSyncDto(
+                clientUuid = batch.localId,
+                batchCode = batch.batchCode,
+                crop = batch.crop,
+                totalQuantity = batch.netWeightKg,
+                qualityGrade = batch.grade,
+                aggregationGpsLat = batch.aggregationGpsLat,
+                aggregationGpsLng = batch.aggregationGpsLng,
+                agentId = batch.agentId,
+                farmerCodes = if (batch.farmerCode.isNotBlank()) listOf(batch.farmerCode) else emptyList(),
+                createdAtEpochMs = batch.createdAt
+            )
+        }
+
         val request = AgentBatchSyncRequest(
             agentId = agentId,
             deviceTimestampMs = System.currentTimeMillis(),
             farmers = farmerDtos,
-            practices = practiceDtos
+            practices = practiceDtos,
+            batches = batchDtos
         )
 
         // Resilient network sync with automatic offline fallback and client_uuid idempotency
@@ -346,47 +367,54 @@ class TraceHarvestRepository(
             ?: return@withContext SyncResult(
                 syncedFarmersCount = 0,
                 syncedPracticesCount = 0,
-                totalPendingRemaining = pendingFarmers.size + pendingPractices.size + otherAccountRecords,
+                totalPendingRemaining = pendingFarmers.size + pendingPractices.size + pendingBatches.size + otherAccountRecords,
                 isSuccess = false,
                 message = (NetworkClient.lastSyncRejection
                     ?: "Could not reach the server. Records are kept on this device and will sync later.") + otherNote,
                 otherAccountRecords = otherAccountRecords
             )
 
-        // 1. Sync pending farmers -> Backend generates or confirms unique official Farmer ID
+        // 1. Sync pending farmers -> Update strictly by unique localId primary key
         pendingFarmers.forEach { farmer ->
-            val backendOfficialId = response.assignedFarmerIds[farmer.clientUuid] ?: run {
-                val statePrefix = farmer.state.take(3).uppercase(Locale.ROOT)
-                val randomDigits = Random.nextInt(1000, 9999)
-                "TH-$statePrefix-2026-$randomDigits"
-            }
+            val resultItem = response.results.firstOrNull { it.id == farmer.clientUuid || it.id == farmer.localId }
+            val backendOfficialId = response.assignedFarmerIds[farmer.clientUuid]
+                ?.takeIf { it.isNotBlank() }
+                ?: resultItem?.code?.takeIf { it.isNotBlank() }
+                ?: farmer.farmerCode
+            val resolvedServerId = resultItem?.serverId?.takeIf { it.isNotBlank() } ?: farmer.localId
 
-            dao.markFarmerSyncedByLocalId(farmer.localId, farmer.localId, backendOfficialId)
-            dao.markFarmerSynced(farmer.id, backendOfficialId)
+            dao.markFarmerSyncedByLocalId(farmer.localId, resolvedServerId, backendOfficialId)
             pendingSyncDao?.markSynced(farmer.localId)
 
-            // Backend dispatches official enrollment SMS to farmer
-            dao.insertSmsLog(
-                SmsLogEntity(
-                    farmerPhone = farmer.phoneNumber,
-                    farmerName = farmer.fullName,
-                    direction = "OUTBOUND",
-                    messageType = "ENROLLMENT",
-                    content = "TraceHarvest: Barka da zuwa! You are officially enrolled. Your Unique Farmer ID is $backendOfficialId (${farmer.crop}, ${farmer.farmSize} ${farmer.farmSizeUnit} in ${farmer.lga}). No app download required.",
-                    timestamp = System.currentTimeMillis(),
-                    status = "DELIVERED"
+            if (farmer.phoneNumber.isNotBlank()) {
+                dao.insertSmsLog(
+                    SmsLogEntity(
+                        farmerPhone = farmer.phoneNumber,
+                        farmerName = farmer.fullName,
+                        direction = "OUTBOUND",
+                        messageType = "ENROLLMENT",
+                        content = "TraceHarvest: Barka da zuwa! You are enrolled with Farmer ID $backendOfficialId (${farmer.crop}, ${farmer.farmSize} ${farmer.farmSizeUnit} in ${farmer.lga}).",
+                        timestamp = System.currentTimeMillis(),
+                        status = "DELIVERED"
+                    )
                 )
-            )
+            }
         }
 
-        // 2. Sync pending practice records
-        if (pendingPractices.isNotEmpty()) {
-            val practiceIds = pendingPractices.map { it.id }
-            dao.markPracticeLogsSynced(practiceIds)
-            pendingPractices.forEach {
-                dao.markPracticeLogSyncedByLocalId(it.localId, it.localId)
-                pendingSyncDao?.markSynced(it.localId)
-            }
+        // 2. Sync pending practice records -> Update strictly by unique localId primary key
+        pendingPractices.forEach { log ->
+            val resultItem = response.results.firstOrNull { it.id == log.clientUuid || it.id == log.localId }
+            val resolvedServerId = resultItem?.serverId?.takeIf { it.isNotBlank() } ?: log.localId
+            dao.markPracticeLogSyncedByLocalId(log.localId, resolvedServerId)
+            pendingSyncDao?.markSynced(log.localId)
+        }
+
+        // 3. Sync pending harvest batches -> Update strictly by unique localId primary key
+        pendingBatches.forEach { batch ->
+            val resultItem = response.results.firstOrNull { it.id == batch.localId || it.id == batch.batchCode }
+            val resolvedServerId = resultItem?.serverId?.takeIf { it.isNotBlank() } ?: batch.localId
+            dao.markBatchSyncedByLocalId(batch.localId, resolvedServerId)
+            pendingSyncDao?.markSynced(batch.localId)
         }
 
         SyncResult(
@@ -409,25 +437,37 @@ class TraceHarvestRepository(
         moisturePercent: Double,
         foreignMatterPercent: Double,
         agentId: String,
-        destinationMarket: String
+        destinationMarket: String,
+        batchCode: String,
+        contributingFarmerCodes: List<String>
     ): HarvestBatchEntity = withContext(Dispatchers.IO) {
         val stampedAgentId = requireAgentId(agentId)
-        val cropCode = crop.take(3).uppercase(Locale.ROOT)
-        val randomNum = Random.nextInt(1000, 9999)
-        val batchCode = "NG-$cropCode-2026-$randomNum-EXP"
-
-        val logs = dao.getPracticeLogsForFarmer(farmerCode).first()
-        val hasBannedChemical = logs.any { it.riskLevel == "BANNED_MRL_VIOLATION" }
-        val daysSinceLastSpray = if (logs.isNotEmpty()) {
-            val mostRecentSpray = logs.maxOf { it.dateApplied }
-            val daysDiff = ((System.currentTimeMillis() - mostRecentSpray) / (1000 * 60 * 60 * 24)).toInt()
-            maxOf(daysDiff, 18)
-        } else {
-            24
+        val resolvedBatchCode = batchCode.trim().ifBlank {
+            val cropCode = crop.take(3).uppercase(Locale.ROOT)
+            val randomNum = Random.nextInt(1000, 9999)
+            "NG-$cropCode-2026-$randomNum-EXP"
         }
 
-        val requiredPhi = logs.maxOfOrNull { it.preHarvestIntervalDays } ?: 14
-        val isPhiPassed = daysSinceLastSpray >= requiredPhi
+        val lookupCodes = (contributingFarmerCodes + listOf(farmerCode))
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it != "MULTIPLE" }
+            .distinct()
+
+        val logs = when {
+            lookupCodes.size > 1 -> dao.getPracticeLogsForFarmerCodes(lookupCodes)
+            lookupCodes.size == 1 -> dao.getPracticeLogsForFarmer(lookupCodes.first()).first()
+            else -> emptyList()
+        }
+
+        val hasBannedChemical = logs.any { it.riskLevel == "BANNED_MRL_VIOLATION" }
+        val requiredPhi = logs.maxOfOrNull { it.preHarvestIntervalDays } ?: 0
+        val daysSinceLastSpray = if (logs.isNotEmpty()) {
+            val mostRecentSpray = logs.maxOf { it.dateApplied }
+            ((System.currentTimeMillis() - mostRecentSpray) / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+        } else {
+            0
+        }
+        val isPhiPassed = requiredPhi == 0 || daysSinceLastSpray >= requiredPhi
 
         val mrlStatus = when {
             hasBannedChemical -> "VIOLATION_BLOCKED"
@@ -444,7 +484,7 @@ class TraceHarvestRepository(
         val isFlagged = hasBannedChemical || !isPhiPassed || moisturePercent > 10.5
         val rejectionReason = when {
             hasBannedChemical -> "EU MRL Alert: Banned pesticide detected in farm history."
-            !isPhiPassed -> "PHI Violation: Harvested before required Pre-Harvest Interval elapsed."
+            !isPhiPassed -> "PHI Violation: Harvested before required $requiredPhi-day Pre-Harvest Interval elapsed ($daysSinceLastSpray days observed)."
             moisturePercent > 10.5 -> "Aflatoxin Hazard: Moisture exceeds 10.0% SPS limit."
             else -> null
         }
@@ -455,13 +495,12 @@ class TraceHarvestRepository(
             else -> "Grade B Local Processing"
         }
 
-        val rawHashPayload = "$batchCode|$crop|$farmerCode|$netWeightKg|$moisturePercent|$mrlStatus|${System.currentTimeMillis()}"
+        val rawHashPayload = "$resolvedBatchCode|$crop|$farmerCode|$netWeightKg|$moisturePercent|$mrlStatus|${System.currentTimeMillis()}"
         val sha256 = generateSha256(rawHashPayload)
-        val txId = "0x" + sha256.take(40).lowercase(Locale.ROOT)
-        val qrPayload = "TRACEHARVEST://BATCH/$batchCode?hash=${sha256.take(16)}&crop=$crop&dest=$destinationMarket"
+        val qrPayload = "TRACEHARVEST://BATCH/$resolvedBatchCode?hash=${sha256.take(16)}&crop=$crop&dest=$destinationMarket"
 
         val batch = HarvestBatchEntity(
-            batchCode = batchCode,
+            batchCode = resolvedBatchCode,
             agentId = stampedAgentId,
             crop = crop,
             farmerCode = farmerCode,
@@ -480,8 +519,8 @@ class TraceHarvestRepository(
             phiDaysObserved = daysSinceLastSpray,
             destinationMarket = destinationMarket,
             blockchainHash = sha256,
-            blockchainTxId = txId,
-            isBlockchainAnchored = !isFlagged,
+            blockchainTxId = "",
+            isBlockchainAnchored = false,
             isFlaggedForRejection = isFlagged,
             rejectionReason = rejectionReason,
             qrPayload = qrPayload,
@@ -495,13 +534,41 @@ class TraceHarvestRepository(
                 id = batch.localId,
                 entityType = "BATCH",
                 entityId = batch.localId,
-                payload = """{"batchCode":"$batchCode","crop":"$crop","netWeightKg":$netWeightKg}""",
+                payload = """{"batchCode":"$resolvedBatchCode","crop":"$crop","netWeightKg":$netWeightKg,"agentId":"$stampedAgentId"}""",
                 status = "PENDING"
             )
         )
 
         batch
     }
+
+    override suspend fun createBatch(
+        farmerCode: String,
+        farmerName: String,
+        crop: String,
+        region: String,
+        bagCount: Int,
+        netWeightKg: Double,
+        moisturePercent: Double,
+        foreignMatterPercent: Double,
+        agentId: String,
+        destinationMarket: String,
+        batchCode: String,
+        contributingFarmerCodes: List<String>
+    ): HarvestBatchEntity = createHarvestBatch(
+        farmerCode = farmerCode,
+        farmerName = farmerName,
+        crop = crop,
+        region = region,
+        bagCount = bagCount,
+        netWeightKg = netWeightKg,
+        moisturePercent = moisturePercent,
+        foreignMatterPercent = foreignMatterPercent,
+        agentId = agentId,
+        destinationMarket = destinationMarket,
+        batchCode = batchCode,
+        contributingFarmerCodes = contributingFarmerCodes
+    )
 
     override suspend fun toggleFlagBatch(batchId: Long, currentFlag: Boolean, reason: String?) = withContext(Dispatchers.IO) {
         dao.setBatchFlaggedStatus(batchId, !currentFlag, if (!currentFlag) reason ?: "Manually flagged by compliance auditor" else null)

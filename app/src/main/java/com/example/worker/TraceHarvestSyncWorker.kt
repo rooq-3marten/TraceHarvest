@@ -30,11 +30,18 @@ class TraceHarvestSyncWorker(
         Log.i(TAG, "Starting TraceHarvest background synchronization with FastAPI...")
 
         return try {
+            com.example.data.remote.NetworkClient.initialize(applicationContext)
+            val sessionManager = SessionManager.getInstance(applicationContext)
+            val token = sessionManager.currentAccessToken()
+            if (!token.isNullOrBlank()) {
+                com.example.data.remote.NetworkClient.setAuthToken(token)
+            }
+
             val database = AppDatabase.getDatabase(applicationContext)
             val repository = TraceHarvestRepository(
                 database.traceHarvestDao(),
                 database.pendingSyncDao(),
-                signedInAgentId = { SessionManager.getInstance(applicationContext).currentAgentIdOrNull() }
+                signedInAgentId = { sessionManager.currentAgentIdOrNull() }
             )
 
             val result = repository.syncAllPending()

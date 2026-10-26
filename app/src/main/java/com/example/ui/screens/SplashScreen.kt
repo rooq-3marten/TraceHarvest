@@ -175,7 +175,7 @@ fun SplashScreen(
                 .padding(bottom = 24.dp)
         ) {
             Text(
-                text = "Field Agent Security • FMC & NCX Verified",
+                text = "TraceHarvest Field Agent",
                 fontSize = 12.sp,
                 color = Color.White.copy(alpha = 0.60f)
             )

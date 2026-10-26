@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FarmerEntity
+import com.example.data.local.entity.HarvestBatchEntity
 import com.example.data.local.entity.PracticeLogEntity
 import com.example.data.remote.NetworkClient
 import com.example.ui.theme.CharcoalBrownText
@@ -73,10 +74,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val SYNC_PENDING_STATUSES = setOf("PENDING", "pending_sync", "FAILED")
+
 @Composable
 fun SyncRecordsScreen(
     farmers: List<FarmerEntity>,
     practices: List<PracticeLogEntity>,
+    batches: List<HarvestBatchEntity> = emptyList(),
     pendingFarmerCount: Int,
     pendingPracticeCount: Int,
     totalPendingCount: Int,
@@ -460,10 +464,17 @@ fun SyncRecordsScreen(
         when (selectedTab) {
             // Tab 0: Pending Queue
             0 -> {
-                val pendingFarmers = farmers.filter { it.syncStatus == "pending_sync" }
-                val pendingPractices = practices.filter { it.syncStatus == "pending_sync" }
+                val pendingFarmers = farmers.filter {
+                    it.syncStatus in SYNC_PENDING_STATUSES && (agentId.isBlank() || it.agentId == agentId)
+                }
+                val pendingPractices = practices.filter {
+                    it.syncStatus in SYNC_PENDING_STATUSES && (agentId.isBlank() || it.agentId == agentId)
+                }
+                val pendingBatches = batches.filter {
+                    it.syncStatus in SYNC_PENDING_STATUSES && (agentId.isBlank() || it.agentId == agentId)
+                }
 
-                if (pendingFarmers.isEmpty() && pendingPractices.isEmpty()) {
+                if (pendingFarmers.isEmpty() && pendingPractices.isEmpty() && pendingBatches.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
@@ -474,7 +485,7 @@ fun SyncRecordsScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ComplianceGreen, modifier = Modifier.size(36.dp))
                                 Text("Queue is Empty", fontWeight = FontWeight.Bold)
-                                Text("All local records have been pushed to backend.", fontSize = 11.sp, color = Color.Gray)
+                                Text("All local records for this account have been pushed to backend.", fontSize = 11.sp, color = Color.Gray)
                             }
                         }
                     }
@@ -488,7 +499,7 @@ fun SyncRecordsScreen(
                                 color = Color(0xFF1E4A32)
                             )
                         }
-                        items(pendingFarmers, key = { "f_${it.id}" }) { farmer ->
+                        items(pendingFarmers, key = { "f_${it.localId}" }) { farmer ->
                             FarmerQueueCard(farmer = farmer)
                         }
                     }
@@ -503,8 +514,23 @@ fun SyncRecordsScreen(
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
-                        items(pendingPractices, key = { "p_${it.id}" }) { log ->
+                        items(pendingPractices, key = { "p_${it.localId}" }) { log ->
                             PracticeQueueCard(log = log)
+                        }
+                    }
+
+                    if (pendingBatches.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Pending Consignment Batches:",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1E4A32),
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                        items(pendingBatches, key = { "b_${it.localId}" }) { batch ->
+                            BatchQueueCard(batch = batch)
                         }
                     }
                 }
@@ -512,14 +538,14 @@ fun SyncRecordsScreen(
 
             // Tab 1: All Farmers
             1 -> {
-                items(farmers, key = { "all_f_${it.id}" }) { farmer ->
+                items(farmers, key = { "all_f_${it.localId}" }) { farmer ->
                     FarmerQueueCard(farmer = farmer)
                 }
             }
 
             // Tab 2: Practice Trail
             2 -> {
-                items(practices, key = { "all_p_${it.id}" }) { log ->
+                items(practices, key = { "all_p_${it.localId}" }) { log ->
                     PracticeQueueCard(log = log)
                 }
             }
@@ -533,6 +559,7 @@ fun SyncRecordsScreen(
 
 @Composable
 private fun FarmerQueueCard(farmer: FarmerEntity) {
+    val isSynced = farmer.isSynced || farmer.syncStatus.equals("synced", ignoreCase = true)
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -546,11 +573,11 @@ private fun FarmerQueueCard(farmer: FarmerEntity) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(farmer.fullName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Surface(
-                        color = if (farmer.syncStatus == "synced") Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
+                        color = if (isSynced) Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
@@ -558,7 +585,7 @@ private fun FarmerQueueCard(farmer: FarmerEntity) {
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = if (farmer.syncStatus == "synced") ComplianceGreen else WarningAmber,
+                            color = if (isSynced) ComplianceGreen else WarningAmber,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                         )
                     }
@@ -596,6 +623,7 @@ private fun FarmerQueueCard(farmer: FarmerEntity) {
 @Composable
 private fun PracticeQueueCard(log: PracticeLogEntity) {
     val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(log.dateApplied))
+    val isSynced = log.isSynced || log.syncStatus.equals("synced", ignoreCase = true)
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -614,7 +642,7 @@ private fun PracticeQueueCard(log: PracticeLogEntity) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(log.practiceType.ifBlank { log.category }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Surface(
-                        color = if (log.syncStatus == "synced") Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
+                        color = if (isSynced) Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
@@ -622,7 +650,7 @@ private fun PracticeQueueCard(log: PracticeLogEntity) {
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = if (log.syncStatus == "synced") ComplianceGreen else WarningAmber,
+                            color = if (isSynced) ComplianceGreen else WarningAmber,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                         )
                     }
@@ -651,6 +679,57 @@ private fun PracticeQueueCard(log: PracticeLogEntity) {
                 Text("Agent: ${log.agentId}", fontSize = 9.sp, color = Color.Gray)
                 Text("GPS: ${log.gpsCoordinates}", fontSize = 9.sp, color = Color.Gray)
             }
+        }
+    }
+}
+
+@Composable
+private fun BatchQueueCard(batch: HarvestBatchEntity) {
+    val isSynced = batch.isSynced || batch.syncStatus.equals("synced", ignoreCase = true)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E9E2))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(batch.batchCode.ifBlank { "Pending Batch" }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Surface(
+                        color = if (isSynced) Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = batch.syncStatus,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSynced) ComplianceGreen else WarningAmber,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text("${batch.netWeightKg} kg", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+            }
+
+            Text(
+                text = "${batch.crop} • ${batch.region} • ${batch.farmerName}",
+                fontSize = 11.sp,
+                color = Color.DarkGray
+            )
+            Text(
+                text = "Agent: ${batch.agentId} • SPS: ${batch.mrlStatus}",
+                fontSize = 9.sp,
+                color = Color.Gray
+            )
         }
     }
 }

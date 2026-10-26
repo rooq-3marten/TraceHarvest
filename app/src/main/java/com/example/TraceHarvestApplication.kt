@@ -40,8 +40,9 @@ class TraceHarvestApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             try {
                 val sessionManager = SessionManager.getInstance(this@TraceHarvestApplication)
-                // The stored token even if it is past its original expiry: a 401 triggers the silent refresh.
-                val token = if (sessionManager.hasValidSession()) sessionManager.currentAccessToken() else null
+                // Restore the stored access token even if past its initial window so a 401 triggers silent refresh.
+                val cached = sessionManager.getCachedProfile()
+                val token = if (cached.agentId.isNotBlank()) sessionManager.currentAccessToken() else null
                 if (!token.isNullOrBlank()) {
                     NetworkClient.setAuthToken(token)
                     Log.i("TraceHarvestApp", "Active session restored for agent")

@@ -4,6 +4,16 @@ let map;
 let markerLayerGroup;
 let polygonLayerGroup;
 
+function escapeHtml(val) {
+  if (val == null) return '';
+  return String(val)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   initMap();
@@ -113,8 +123,8 @@ function renderKPIs(stats) {
 
   const totalPrac = stats.total_practices || 0;
   const nonComp = stats.non_compliant_practices || 0;
-  const rate = totalPrac > 0 ? Math.round(((totalPrac - nonComp) / totalPrac) * 100) : 100;
-  document.getElementById('kpi-compliance-rate').textContent = `${rate}%`;
+  document.getElementById('kpi-compliance-rate').textContent =
+    totalPrac > 0 ? `${Math.round(((totalPrac - nonComp) / totalPrac) * 100)}%` : '—';
 }
 
 // Render Markers & Polygons on Leaflet GIS Map
@@ -151,11 +161,11 @@ function renderMapData(farmers) {
 
       circle.bindPopup(`
         <div style="font-family: sans-serif; font-size: 12px; color: #1e293b;">
-          <strong style="color: #065f46; font-size: 13px;">${f.official_farmer_id}</strong><br>
-          <strong>${f.full_name}</strong><br>
-          Crop: <strong>${f.crop}</strong> (${f.farm_size_hectares} ha)<br>
-          Location: ${f.community || ''}, ${f.lga}, ${f.state}<br>
-          Agent: ${f.agent_id}<br>
+          <strong style="color: #065f46; font-size: 13px;">${escapeHtml(f.official_farmer_id)}</strong><br>
+          <strong>${escapeHtml(f.full_name)}</strong><br>
+          Crop: <strong>${escapeHtml(f.crop)}</strong> (${escapeHtml(f.farm_size_hectares)} ha)<br>
+          Location: ${escapeHtml(f.community || '')}, ${escapeHtml(f.lga)}, ${escapeHtml(f.state)}<br>
+          Agent: ${escapeHtml(f.agent_id)}<br>
           Coordinates: ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E
         </div>
       `);
@@ -196,13 +206,13 @@ function renderFarmersTable(farmers) {
 
   tbody.innerHTML = farmers.map(f => `
     <tr class="hover:bg-slate-800/40 transition">
-      <td class="p-3 font-mono font-bold text-emerald-400">${f.official_farmer_id}</td>
-      <td class="p-3 font-medium text-white">${f.full_name}<br><span class="text-[10px] text-slate-400">${f.phone_number}</span></td>
-      <td class="p-3">${f.state}, <span class="text-slate-400">${f.lga}</span></td>
-      <td class="p-3 font-semibold text-slate-200">${f.crop}</td>
-      <td class="p-3">${f.farm_size_hectares} ha</td>
+      <td class="p-3 font-mono font-bold text-emerald-400">${escapeHtml(f.official_farmer_id)}</td>
+      <td class="p-3 font-medium text-white">${escapeHtml(f.full_name)}<br><span class="text-[10px] text-slate-400">${escapeHtml(f.phone_number)}</span></td>
+      <td class="p-3">${escapeHtml(f.state)}, <span class="text-slate-400">${escapeHtml(f.lga)}</span></td>
+      <td class="p-3 font-semibold text-slate-200">${escapeHtml(f.crop)}</td>
+      <td class="p-3">${escapeHtml(f.farm_size_hectares)} ha</td>
       <td class="p-3 font-mono text-[11px] text-slate-400">${parseFloat(f.latitude || 0).toFixed(4)}, ${parseFloat(f.longitude || 0).toFixed(4)}</td>
-      <td class="p-3 font-mono text-[11px] text-emerald-400/80">${f.agent_id}</td>
+      <td class="p-3 font-mono text-[11px] text-emerald-400/80">${escapeHtml(f.agent_id)}</td>
       <td class="p-3"><span class="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-500/30">SYNCED</span></td>
     </tr>
   `).join('');
@@ -219,27 +229,27 @@ function renderComplianceTable(practices) {
   }
 
   tbody.innerHTML = practices.map(p => {
-    const isPhiCleared = p.phi_cleared;
-    const isApproved = p.nafdac_approved;
+    const isPhiCleared = Boolean(p.phi_cleared);
+    const isApproved = p.nafdac_approved === true && p.risk_level !== 'BANNED_MRL_VIOLATION';
 
     return `
       <tr class="hover:bg-slate-800/40 transition">
-        <td class="p-3 font-mono font-bold text-slate-300">${p.farmer_code}</td>
-        <td class="p-3 text-slate-200">${p.practice_type}</td>
-        <td class="p-3 font-semibold text-white">${p.product_name || 'N/A'}</td>
-        <td class="p-3 text-slate-300 text-[11px]">${p.active_ingredient || 'N/A'}</td>
-        <td class="p-3 font-mono text-emerald-400 text-[11px]">${p.nafdac_reg_no || 'Pending Reg'}</td>
-        <td class="p-3">${p.dosage || 'Standard'}</td>
+        <td class="p-3 font-mono font-bold text-slate-300">${escapeHtml(p.farmer_code)}</td>
+        <td class="p-3 text-slate-200">${escapeHtml(p.practice_type)}</td>
+        <td class="p-3 font-semibold text-white">${escapeHtml(p.product_name || 'N/A')}</td>
+        <td class="p-3 text-slate-300 text-[11px]">${escapeHtml(p.active_ingredient || 'N/A')}</td>
+        <td class="p-3 font-mono text-emerald-400 text-[11px]">${escapeHtml(p.nafdac_reg_no || '—')}</td>
+        <td class="p-3">${escapeHtml(p.dosage || '—')}</td>
         <td class="p-3">
           ${isPhiCleared 
-            ? `<span class="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-500/30">✓ PHI CLEARED</span>` 
+            ? `<span class="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-500/30">✓ PHI ELAPSED</span>` 
             : `<span class="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-500/30">⏳ WITHHOLDING ACTIVE</span>`
           }
         </td>
         <td class="p-3">
           ${isApproved 
-            ? `<span class="text-emerald-400 font-semibold text-[11px]">✓ Export Compliant</span>` 
-            : `<span class="text-rose-400 font-semibold text-[11px]">⚠ Non-Compliant</span>`
+            ? `<span class="text-emerald-400 font-semibold text-[11px]">NAFDAC Registered</span>` 
+            : `<span class="text-rose-400 font-semibold text-[11px]">⚠ Unregistered / Flagged</span>`
           }
         </td>
       </tr>
@@ -253,24 +263,24 @@ function renderBatches(batches) {
   if (!container) return;
 
   if (!batches || batches.length === 0) {
-    container.innerHTML = `<div class="col-span-2 p-8 text-center text-slate-500 border border-dashed border-slate-700 rounded-xl">No export batches consolidated yet. Click '+ Create New Batch' to aggregate registered farmers.</div>`;
+    container.innerHTML = `<div class="col-span-2 p-8 text-center text-slate-500 border border-dashed border-slate-700 rounded-xl">No batches consolidated yet. Sync batches from the mobile app or click '+ Create New Batch'.</div>`;
     return;
   }
 
   container.innerHTML = batches.map(b => `
     <div class="bg-slate-900 border border-slate-700/80 rounded-xl p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <span class="font-mono text-xs font-bold text-emerald-400">${b.batch_number}</span>
-        <span class="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-500/30">${b.export_clearance_status}</span>
+        <span class="font-mono text-xs font-bold text-emerald-400">${escapeHtml(b.batch_number)}</span>
+        <span class="bg-slate-800 text-slate-200 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-700">${escapeHtml(b.export_clearance_status || 'RECORDED')}</span>
       </div>
-      <div class="text-sm font-bold text-white">${b.crop} Export Consignment (${b.estimated_tonnage} MT)</div>
-      <div class="text-xs text-slate-400">Destination: <span class="text-slate-200 font-medium">${b.destination}</span></div>
+      <div class="text-sm font-bold text-white">${escapeHtml(b.crop)} Consignment (${escapeHtml(b.estimated_tonnage)} MT)</div>
+      <div class="text-xs text-slate-400">Destination: <span class="text-slate-200 font-medium">${escapeHtml(b.destination || '—')}</span></div>
       <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 font-mono text-[10px] text-slate-400 break-all">
-        SHA-256: ${b.tamper_proof_sha256}
+        SHA-256: ${escapeHtml(b.tamper_proof_sha256)}
       </div>
       <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-800">
-        <span class="text-slate-400">${b.farmer_count || 12} Contributing Smallholders</span>
-        <span class="text-emerald-400 font-semibold">EUDR & NAFDAC Certified</span>
+        <span class="text-slate-400">${Number.isFinite(Number(b.farmer_count)) ? Number(b.farmer_count) : 0} Contributing Smallholders</span>
+        <span class="text-slate-400 font-mono text-[11px]">${escapeHtml(b.agent_id || 'Portal')}</span>
       </div>
     </div>
   `).join('');
@@ -278,20 +288,24 @@ function renderBatches(batches) {
 
 // Create New Batch Dialog
 async function createNewBatch() {
-  const crop = prompt('Enter Crop for Consignment (e.g. Sesame, Cowpea, Ginger):', 'Sesame');
-  if (!crop) return;
-  const destination = prompt('Enter Destination Port (e.g. Rotterdam, Netherlands (EU)):', 'Rotterdam, Netherlands (EU)');
+  const crop = prompt('Enter Crop for Consignment (e.g. Sesame, Cowpea, Ginger):', '');
+  if (!crop || !crop.trim()) return;
+  const destination = prompt('Enter Destination Port:', '');
+  const tonnageRaw = prompt('Enter Tonnage (MT):', '');
+  const tonnage = parseFloat(tonnageRaw) || 0;
 
   try {
     const res = await fetch('/api/v1/admin/batches/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ crop, destination, estimated_tonnage: 24.5 })
+      body: JSON.stringify({ crop: crop.trim(), destination: (destination || '').trim(), estimated_tonnage: tonnage })
     });
     const data = await res.json();
     if (data.success) {
-      alert('Batch ' + data.batch.batch_number + ' successfully created and cryptographically signed.');
+      alert('Batch ' + data.batch.batch_number + ' recorded.');
       loadAllData();
+    } else if (data.error) {
+      alert('Could not create batch: ' + data.error);
     }
   } catch (e) {
     alert('Failed to create batch: ' + e.message);

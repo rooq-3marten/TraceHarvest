@@ -182,8 +182,19 @@ fun SettingsScreen(
                 }
             }
 
-            // Google Satellite Tile Cache Management
+            // Map & Temporary Cache Management
             item {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                var cacheBytes by remember {
+                    mutableLongStateOf(
+                        context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    )
+                }
+                val cacheSizeLabel = remember(cacheBytes) {
+                    val mb = cacheBytes / (1024.0 * 1024.0)
+                    if (mb >= 1.0) String.format(java.util.Locale.ROOT, "%.1f MB", mb)
+                    else String.format(java.util.Locale.ROOT, "%d KB", (cacheBytes / 1024L).coerceAtLeast(0L))
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -194,16 +205,20 @@ fun SettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Offline Map Cache Storage", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CharcoalBrownText)
+                        Text("Offline Map & App Cache Storage", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CharcoalBrownText)
                         Text(
-                            text = "Pre-cached Google Satellite tiles for ${zoneProfile.zone.zoneName}: 42 MB / 100 MB max.",
+                            text = "Current local cache usage (${zoneProfile.zone.zoneName}): $cacheSizeLabel.",
                             fontSize = 12.sp,
                             color = MutedBrownText
                         )
 
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(
-                                onClick = { cacheClearedMessage = "Map tile cache refreshed successfully." },
+                                onClick = {
+                                    com.example.core.resilience.DeviceHardeningManager.cleanTemporaryCaches(context)
+                                    cacheBytes = context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                                    cacheClearedMessage = "Temporary cache cleared."
+                                },
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text("Clear Tile Cache", fontSize = 11.sp)
@@ -322,7 +337,7 @@ fun SettingsScreen(
                 }
             }
 
-            // About TraceHarvest & Regulatory Compliance
+            // About TraceHarvest Capabilities
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -334,10 +349,10 @@ fun SettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text("TraceHarvest Standards", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = CharcoalBrownText)
-                        Text("• EUDR 2020/2024 Forest Cover Geolocation Compliant", fontSize = 11.sp, color = MutedBrownText)
-                        Text("• NAFDAC Export Clearance & Agrochemical Audit Ready", fontSize = 11.sp, color = MutedBrownText)
-                        Text("• NAQS Phytosanitary Chain of Custody Standard", fontSize = 11.sp, color = MutedBrownText)
+                        Text("TraceHarvest Field Capabilities", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = CharcoalBrownText)
+                        Text("• Farm GPS coordinate and perimeter boundary recording", fontSize = 11.sp, color = MutedBrownText)
+                        Text("• NAFDAC agrochemical catalog lookup and Pre-Harvest Interval tracking", fontSize = 11.sp, color = MutedBrownText)
+                        Text("• Offline SQLite storage with encrypted session sync", fontSize = 11.sp, color = MutedBrownText)
                         Text("Version 2.0 (Regional 6-Zone Rollout Engine)", fontSize = 10.sp, color = ForestGreenSecondary, fontWeight = FontWeight.Bold)
                     }
                 }

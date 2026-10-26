@@ -35,7 +35,6 @@ import com.example.ui.theme.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.core.auth.AgentApprovalStatus
 import com.example.core.auth.AgentProfile
 import com.example.ui.viewmodel.AgentAuthViewModel
@@ -112,7 +111,14 @@ fun TraceHarvestApp(
     // Lifecycle Guard: Re-check approval status whenever app returns to foreground (ON_RESUME)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+            if (event == Lifecycle.Event.ON_RESUME &&
+                appNavState in listOf(
+                    AppNavState.MAIN,
+                    AppNavState.PENDING_APPROVAL,
+                    AppNavState.REJECTED,
+                    AppNavState.SUSPENDED
+                )
+            ) {
                 coroutineScope.launch {
                     if (sessionManager.hasValidSession()) {
                         authViewModel.refreshAgentStatus { status ->
@@ -383,7 +389,7 @@ fun TraceHarvestApp(
                                 HomeDashboardScreen(
                                     agentName = currentAgentProfile.name,
                                     agentAssociation = currentAgentProfile.association,
-                                    agentLocation = currentAgentProfile.location.ifBlank { "Dambatta, Kano State" },
+                                    agentLocation = currentAgentProfile.location,
                                     currentZone = currentZone,
                                     totalFarmersCount = farmers.size,
                                     totalPracticesCount = practiceLogs.size,
@@ -458,6 +464,7 @@ fun TraceHarvestApp(
                                 SyncRecordsScreen(
                                     farmers = farmers,
                                     practices = practiceLogs,
+                                    batches = batches,
                                     pendingFarmerCount = pendingFarmerCount,
                                     pendingPracticeCount = pendingPracticeCount,
                                     totalPendingCount = totalPendingCount,

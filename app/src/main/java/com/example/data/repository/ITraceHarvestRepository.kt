@@ -99,8 +99,39 @@ interface ITraceHarvestRepository {
         foreignMatterPercent: Double,
         /** The signed-in agent. Required: every record is stamped with it. */
         agentId: String,
-        destinationMarket: String = "EU & United Kingdom"
+        destinationMarket: String = "EU & United Kingdom",
+        batchCode: String = "",
+        contributingFarmerCodes: List<String> = emptyList()
     ): HarvestBatchEntity
+
+    suspend fun createBatch(
+        farmerCode: String,
+        farmerName: String,
+        crop: String,
+        region: String,
+        bagCount: Int,
+        netWeightKg: Double,
+        moisturePercent: Double,
+        foreignMatterPercent: Double,
+        /** The signed-in agent. Required: every record is stamped with it. */
+        agentId: String,
+        destinationMarket: String = "EU & United Kingdom",
+        batchCode: String = "",
+        contributingFarmerCodes: List<String> = emptyList()
+    ): HarvestBatchEntity = createHarvestBatch(
+        farmerCode = farmerCode,
+        farmerName = farmerName,
+        crop = crop,
+        region = region,
+        bagCount = bagCount,
+        netWeightKg = netWeightKg,
+        moisturePercent = moisturePercent,
+        foreignMatterPercent = foreignMatterPercent,
+        agentId = agentId,
+        destinationMarket = destinationMarket,
+        batchCode = batchCode,
+        contributingFarmerCodes = contributingFarmerCodes
+    )
 
     suspend fun toggleFlagBatch(batchId: Long, currentFlag: Boolean, reason: String?)
 

@@ -45,10 +45,10 @@ interface TraceHarvestDao {
     @Query("SELECT COUNT(*) FROM farmers WHERE syncStatus IN ('PENDING', 'pending_sync', 'FAILED')")
     fun getPendingSyncFarmersCount(): Flow<Int>
 
-    @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1, serverId = :serverId, farmerCode = :serverCode WHERE localId = :localId")
+    @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1, serverId = :serverId, farmerCode = :serverCode, farmerDisplayId = :serverCode WHERE localId = :localId")
     suspend fun markFarmerSyncedByLocalId(localId: String, serverId: String, serverCode: String)
 
-    @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1, farmerCode = :serverCode WHERE localId = :localId")
+    @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1, farmerCode = :serverCode, farmerDisplayId = :serverCode WHERE localId = :localId")
     suspend fun markFarmerSyncedCodeOnly(localId: String, serverCode: String)
 
     @Query("UPDATE farmers SET syncStatus = 'synced', isSynced = 1, farmerCode = :serverCode, farmerDisplayId = :serverCode WHERE id = :id")
@@ -67,6 +67,9 @@ interface TraceHarvestDao {
     @Query("SELECT * FROM practice_logs WHERE farmerCode = :farmerCode ORDER BY createdAt DESC")
     fun getPracticeLogsForFarmer(farmerCode: String): Flow<List<PracticeLogEntity>>
 
+    @Query("SELECT * FROM practice_logs WHERE farmerCode IN (:farmerCodes) ORDER BY createdAt DESC")
+    suspend fun getPracticeLogsForFarmerCodes(farmerCodes: List<String>): List<PracticeLogEntity>
+
     @Query("SELECT COUNT(*) FROM practice_logs WHERE riskLevel = 'BANNED_MRL_VIOLATION'")
     fun getBannedPesticideViolationsCount(): Flow<Int>
 
@@ -82,14 +85,11 @@ interface TraceHarvestDao {
     @Query("SELECT COUNT(*) FROM practice_logs WHERE syncStatus IN ('PENDING', 'pending_sync', 'FAILED')")
     fun getPendingSyncPracticeLogsCount(): Flow<Int>
 
-    @Query("UPDATE practice_logs SET syncStatus = 'SYNCED', isSynced = 1, serverId = :serverId WHERE localId = :localId")
+    @Query("UPDATE practice_logs SET syncStatus = 'synced', isSynced = 1, serverId = :serverId WHERE localId = :localId")
     suspend fun markPracticeLogSyncedByLocalId(localId: String, serverId: String)
 
-    @Query("UPDATE practice_logs SET syncStatus = 'SYNCED', isSynced = 1 WHERE id = :id")
-    suspend fun markPracticeLogSynced(id: Long)
-
-    @Query("UPDATE practice_logs SET syncStatus = 'SYNCED', isSynced = 1 WHERE id IN (:ids)")
-    suspend fun markPracticeLogsSynced(ids: List<Long>)
+    @Query("UPDATE practice_logs SET syncStatus = 'synced', isSynced = 1 WHERE localId IN (:localIds)")
+    suspend fun markPracticeLogsSyncedByLocalIds(localIds: List<String>)
 
     // --- Harvest Batches ---
     @Query("SELECT * FROM harvest_batches ORDER BY createdAt DESC")
@@ -122,8 +122,20 @@ interface TraceHarvestDao {
     @Update
     suspend fun updateBatch(batch: HarvestBatchEntity)
 
-    @Query("UPDATE harvest_batches SET syncStatus = 'SYNCED', isSynced = 1, serverId = :serverId WHERE localId = :localId")
+    @Query("SELECT * FROM harvest_batches WHERE syncStatus IN ('PENDING', 'pending_sync', 'FAILED') ORDER BY createdAt ASC")
+    suspend fun getPendingSyncBatches(): List<HarvestBatchEntity>
+
+    @Query("SELECT COUNT(*) FROM harvest_batches WHERE syncStatus IN ('PENDING', 'pending_sync', 'FAILED')")
+    fun getPendingSyncBatchesCount(): Flow<Int>
+
+    @Query("UPDATE harvest_batches SET syncStatus = 'synced', isSynced = 1, serverId = :serverId WHERE localId = :localId")
     suspend fun markBatchSyncedByLocalId(localId: String, serverId: String)
+
+    @Query("UPDATE harvest_batches SET isBlockchainAnchored = 1, blockchainTxId = :txId WHERE localId = :localId")
+    suspend fun anchorBatchToBlockchainByLocalId(localId: String, txId: String)
+
+    @Query("UPDATE harvest_batches SET isFlaggedForRejection = :isFlagged, rejectionReason = :reason WHERE localId = :localId")
+    suspend fun setBatchFlaggedStatusByLocalId(localId: String, isFlagged: Boolean, reason: String?)
 
     @Query("UPDATE harvest_batches SET isBlockchainAnchored = 1, blockchainTxId = :txId WHERE id = :batchId")
     suspend fun anchorBatchToBlockchain(batchId: Long, txId: String)

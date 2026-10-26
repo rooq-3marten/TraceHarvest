@@ -109,19 +109,40 @@ class TraceHarvestViewModel @JvmOverloads constructor(
         }
         viewModelScope.launch {
             try {
-                repository.createHarvestBatch(
-                    farmerCode = contributingFarmerIds.firstOrNull() ?: "MULTIPLE",
-                    farmerName = "${contributingFarmerIds.size} Smallholders",
+                val selectedFarmers = allFarmers.value.filter {
+                    it.localId in contributingFarmerIds || it.farmerCode in contributingFarmerIds
+                }
+                val farmerCodes = selectedFarmers.map { it.farmerCode }.filter { it.isNotBlank() }
+                val primaryFarmerCode = farmerCodes.firstOrNull()
+                    ?: contributingFarmerIds.firstOrNull()?.takeIf { !it.contains("-") || it.startsWith("TH-") }
+                    ?: "UNLINKED"
+                val farmerLabel = when {
+                    selectedFarmers.size == 1 -> selectedFarmers.first().fullName
+                    selectedFarmers.size > 1 -> "${selectedFarmers.size} Smallholders"
+                    contributingFarmerIds.isNotEmpty() -> "${contributingFarmerIds.size} Smallholders"
+                    else -> "Unlinked Consignment"
+                }
+                val (moisture, foreignMatter) = when {
+                    qualityGrade.startsWith("Grade B", ignoreCase = true) -> 9.2 to 1.2
+                    qualityGrade.startsWith("Grade C", ignoreCase = true) -> 11.2 to 2.0
+                    else -> 7.4 to 0.5
+                }
+
+                repository.createBatch(
+                    farmerCode = primaryFarmerCode,
+                    farmerName = farmerLabel,
                     crop = crop,
                     region = hubName,
                     bagCount = (quantityKg / 50.0).toInt().coerceAtLeast(1),
                     netWeightKg = quantityKg,
-                    moisturePercent = 7.4,
-                    foreignMatterPercent = 0.5,
+                    moisturePercent = moisture,
+                    foreignMatterPercent = foreignMatter,
                     agentId = currentAgentId,
-                    destinationMarket = "EU & Asia"
+                    destinationMarket = "EU & Asia",
+                    batchCode = batchCode,
+                    contributingFarmerCodes = farmerCodes
                 )
-                _userMessage.value = "Export batch $batchCode registered successfully for $hubName."
+                _userMessage.value = "Batch $batchCode saved locally for $hubName."
             } catch (e: Exception) {
                 _userMessage.value = "Failed to create batch: ${e.localizedMessage}"
             }
@@ -164,33 +185,57 @@ class TraceHarvestViewModel @JvmOverloads constructor(
             emptyList()
         )
 
-        pendingFarmerSyncCount = repository.pendingFarmerSyncCount.stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            0
-        )
-
-        pendingPracticeSyncCount = repository.pendingPracticeSyncCount.stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            0
-        )
-
-        totalPendingSyncCount = combine(pendingFarmerSyncCount, pendingPracticeSyncCount) { f, p ->
-            f + p
+        pendingFarmerSyncCount = combine(allFarmers, _currentAgentId) { farmers, agentId ->
+            farmers.count {
+                it.syncStatus in PENDING_STATUSES && (agentId.isBlank() || it.agentId == agentId)
+            }
         }.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
             0
         )
 
-        dashboardMetrics = combine(allFarmers, allPracticeLogs, totalPendingSyncCount) { farmers, logs, pending ->
+        pendingPracticeSyncCount = combine(allPracticeLogs, _currentAgentId) { logs, agentId ->
+            logs.count {
+                it.syncStatus in PENDING_STATUSES && (agentId.isBlank() || it.agentId == agentId)
+            }
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
+
+        val pendingBatchSyncCount = combine(allBatches, _currentAgentId) { batches, agentId ->
+            batches.count {
+                it.syncStatus in PENDING_STATUSES && (agentId.isBlank() || it.agentId == agentId)
+            }
+        }
+
+        totalPendingSyncCount = combine(
+            pendingFarmerSyncCount,
+            pendingPracticeSyncCount,
+            pendingBatchSyncCount
+        ) { f, p, b ->
+            f + p + b
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
+
+        dashboardMetrics = combine(
+            allFarmers,
+            allPracticeLogs,
+            pendingFarmerSyncCount,
+            pendingPracticeSyncCount,
+            totalPendingSyncCount
+        ) { farmers, logs, pendingFarmers, pendingLogs, pendingTotal ->
             DashboardMetrics(
                 totalFarmers = farmers.size,
-                pendingFarmersSync = farmers.count { it.syncStatus == "pending_sync" },
+                pendingFarmersSync = pendingFarmers,
                 totalPractices = logs.size,
-                pendingPracticesSync = logs.count { it.syncStatus == "pending_sync" },
-                totalPending = pending
+                pendingPracticesSync = pendingLogs,
+                totalPending = pendingTotal
             )
         }.stateIn(
             viewModelScope,
@@ -198,12 +243,18 @@ class TraceHarvestViewModel @JvmOverloads constructor(
             DashboardMetrics()
         )
 
-        otherAccountPendingCount = combine(allFarmers, allPracticeLogs, _currentAgentId) { farmers, logs, agentId ->
+        otherAccountPendingCount = combine(
+            allFarmers,
+            allPracticeLogs,
+            allBatches,
+            _currentAgentId
+        ) { farmers, logs, batches, agentId ->
             if (agentId.isBlank()) {
                 0
             } else {
                 farmers.count { it.syncStatus in PENDING_STATUSES && it.agentId != agentId } +
-                    logs.count { it.syncStatus in PENDING_STATUSES && it.agentId != agentId }
+                    logs.count { it.syncStatus in PENDING_STATUSES && it.agentId != agentId } +
+                    batches.count { it.syncStatus in PENDING_STATUSES && it.agentId != agentId }
             }
         }.stateIn(
             viewModelScope,
