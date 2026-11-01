@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import com.example.data.catalog.NafdacCatalog
+import com.example.data.catalog.DashboardRisk
 import com.example.data.local.dao.PendingSyncDao
 import com.example.data.local.dao.TraceHarvestDao
 import com.example.data.local.entity.FarmerEntity
@@ -13,6 +14,7 @@ import com.example.data.remote.model.AgentBatchSyncRequest
 import com.example.data.remote.model.BatchSyncDto
 import com.example.data.remote.model.FarmerSyncDto
 import com.example.data.remote.model.PracticeLogSyncDto
+import com.example.data.remote.model.SyncRecordResultDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -333,7 +335,7 @@ class TraceHarvestRepository(
                 nafdacRegNo = log.nafdacRegNo,
                 nafdacApproved = log.nafdacApproved,
                 gpsCoordinates = log.gpsCoordinates,
-                riskLevel = log.riskLevel,
+                riskLevel = DashboardRisk.from(log.riskLevel),
                 agentId = log.agentId,
                 verificationPhotoUri = log.verificationPhotoUri
             )
@@ -374,17 +376,31 @@ class TraceHarvestRepository(
                 otherAccountRecords = otherAccountRecords
             )
 
-        // 1. Sync pending farmers -> Update strictly by unique localId primary key
+        // A record is marked synced only when the server says it saved it.
+        // Anything else stays queued, and the reason is reported to the agent.
+        val answers = response.results.associateBy { it.id }
+        val notSavedReasons = mutableListOf<String>()
+        fun answerFor(vararg ids: String): SyncRecordResultDto? = ids.firstNotNullOfOrNull { answers[it] }
+        fun isSaved(answer: SyncRecordResultDto?): Boolean {
+            if (answer?.status.equals("SYNCED", ignoreCase = true)) return true
+            notSavedReasons += answer?.error ?: "the server did not confirm it"
+            return false
+        }
+
+        var savedFarmers = 0
         pendingFarmers.forEach { farmer ->
-            val resultItem = response.results.firstOrNull { it.id == farmer.clientUuid || it.id == farmer.localId }
+            val answer = answerFor(farmer.clientUuid, farmer.localId)
+            if (!isSaved(answer)) return@forEach
+
             val backendOfficialId = response.assignedFarmerIds[farmer.clientUuid]
                 ?.takeIf { it.isNotBlank() }
-                ?: resultItem?.code?.takeIf { it.isNotBlank() }
+                ?: answer?.code?.takeIf { it.isNotBlank() }
                 ?: farmer.farmerCode
-            val resolvedServerId = resultItem?.serverId?.takeIf { it.isNotBlank() } ?: farmer.localId
+            val resolvedServerId = answer?.serverId?.takeIf { it.isNotBlank() } ?: farmer.localId
 
             dao.markFarmerSyncedByLocalId(farmer.localId, resolvedServerId, backendOfficialId)
             pendingSyncDao?.markSynced(farmer.localId)
+            savedFarmers++
 
             if (farmer.phoneNumber.isNotBlank()) {
                 dao.insertSmsLog(
@@ -401,30 +417,41 @@ class TraceHarvestRepository(
             }
         }
 
-        // 2. Sync pending practice records -> Update strictly by unique localId primary key
+        var savedPractices = 0
         pendingPractices.forEach { log ->
-            val resultItem = response.results.firstOrNull { it.id == log.clientUuid || it.id == log.localId }
-            val resolvedServerId = resultItem?.serverId?.takeIf { it.isNotBlank() } ?: log.localId
-            dao.markPracticeLogSyncedByLocalId(log.localId, resolvedServerId)
+            val answer = answerFor(log.clientUuid, log.localId)
+            if (!isSaved(answer)) return@forEach
+
+            dao.markPracticeLogSyncedByLocalId(log.localId, answer?.serverId?.takeIf { it.isNotBlank() } ?: log.localId)
             pendingSyncDao?.markSynced(log.localId)
+            savedPractices++
         }
 
-        // 3. Sync pending harvest batches -> Update strictly by unique localId primary key
         pendingBatches.forEach { batch ->
-            val resultItem = response.results.firstOrNull { it.id == batch.localId || it.id == batch.batchCode }
-            val resolvedServerId = resultItem?.serverId?.takeIf { it.isNotBlank() } ?: batch.localId
-            dao.markBatchSyncedByLocalId(batch.localId, resolvedServerId)
+            val answer = answerFor(batch.localId, batch.batchCode)
+            if (!isSaved(answer)) return@forEach
+
+            dao.markBatchSyncedByLocalId(batch.localId, answer?.serverId?.takeIf { it.isNotBlank() } ?: batch.localId)
             pendingSyncDao?.markSynced(batch.localId)
         }
 
         SyncResult(
-            syncedFarmersCount = pendingFarmers.size,
-            syncedPracticesCount = pendingPractices.size,
-            totalPendingRemaining = otherAccountRecords,
-            isSuccess = true,
-            message = response.message + otherNote,
+            syncedFarmersCount = savedFarmers,
+            syncedPracticesCount = savedPractices,
+            totalPendingRemaining = notSavedReasons.size + otherAccountRecords,
+            isSuccess = notSavedReasons.isEmpty(),
+            message = syncMessage(response.message, notSavedReasons) + otherNote,
             otherAccountRecords = otherAccountRecords
         )
+    }
+
+    /** Plain-language summary: how many were not saved and the most common reasons. */
+    private fun syncMessage(serverMessage: String, notSavedReasons: List<String>): String {
+        if (notSavedReasons.isEmpty()) return serverMessage
+        val reasons = notSavedReasons.groupingBy { it }.eachCount()
+            .entries.sortedByDescending { it.value }.take(2)
+            .joinToString("; ") { "${it.key} (${it.value})" }
+        return "${notSavedReasons.size} record(s) were not saved and stay on this device: $reasons."
     }
 
     override suspend fun createHarvestBatch(
