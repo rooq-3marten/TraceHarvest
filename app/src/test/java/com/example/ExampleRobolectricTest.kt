@@ -249,11 +249,7 @@ class ExampleRobolectricTest {
     val pendingBefore = dao.getPendingSyncPracticeLogs()
     assertEquals(1, pendingBefore.size)
 
-    com.example.data.remote.NetworkClient.mockResponseForTesting =
-      com.example.data.remote.model.AgentBatchSyncResponse(
-        status = "success",
-        syncedPracticesCount = 1
-      )
+    FakeSyncServer.install()
     try {
       val repository = TraceHarvestRepository(dao, signedInAgentId = { "TEST-AGENT-1" })
       val syncResult = repository.syncAllPending()
@@ -264,7 +260,7 @@ class ExampleRobolectricTest {
       val pendingAfter = dao.getPendingSyncPracticeLogs()
       assertEquals(0, pendingAfter.size)
     } finally {
-      com.example.data.remote.NetworkClient.mockResponseForTesting = null
+      com.example.data.remote.NetworkClient.mockResponderForTesting = null
       db.close()
     }
   }

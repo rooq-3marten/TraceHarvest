@@ -7,7 +7,6 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.entity.FarmerEntity
 import com.example.data.local.entity.PracticeLogEntity
 import com.example.data.remote.NetworkClient
-import com.example.data.remote.model.AgentBatchSyncResponse
 import com.example.data.repository.TraceHarvestRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -31,12 +30,12 @@ class AgentStampingTest {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(ctx, AppDatabase::class.java).allowMainThreadQueries().build()
         repo = TraceHarvestRepository(db.traceHarvestDao(), signedInAgentId = { signedIn })
-        NetworkClient.mockResponseForTesting = AgentBatchSyncResponse(status = "success")
+        FakeSyncServer.install()
     }
 
     @After
     fun tearDown() {
-        NetworkClient.mockResponseForTesting = null
+        NetworkClient.mockResponderForTesting = null
         db.close()
     }
 
@@ -101,11 +100,8 @@ class AgentStampingTest {
             bagCount = 2, netWeightKg = 100.0, moisturePercent = 7.2, foreignMatterPercent = 0.5, agentId = "TEST-AGENT-B"
         )
 
-        NetworkClient.mockResponseForTesting = AgentBatchSyncResponse(
-            status = "success",
-            syncedFarmersCount = 2,
-            syncedPracticesCount = 1,
-            assignedFarmerIds = mapOf(
+        FakeSyncServer.install(
+            farmerCodes = mapOf(
                 fA1.clientUuid to "TH-SRV-001",
                 fA2.clientUuid to "TH-SRV-002"
             )

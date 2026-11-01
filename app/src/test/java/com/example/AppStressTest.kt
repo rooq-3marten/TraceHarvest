@@ -57,17 +57,12 @@ class AppStressTest {
         ussdEngine = UssdEngine()
         smsEngine = SmsEngine()
 
-        com.example.data.remote.NetworkClient.mockResponseForTesting = com.example.data.remote.model.AgentBatchSyncResponse(
-            status = "success",
-            syncedFarmersCount = 20,
-            syncedPracticesCount = 0,
-            assignedFarmerIds = emptyMap()
-        )
+        FakeSyncServer.install()
     }
 
     @After
     fun tearDown() {
-        com.example.data.remote.NetworkClient.mockResponseForTesting = null
+        com.example.data.remote.NetworkClient.mockResponderForTesting = null
         database.close()
     }
 
