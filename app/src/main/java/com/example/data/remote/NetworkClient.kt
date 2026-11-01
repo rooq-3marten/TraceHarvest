@@ -108,6 +108,9 @@ object NetworkClient {
     @Volatile
     var mockResponseForTesting: AgentBatchSyncResponse? = null
 
+    /** Tests only: answers each sync request the way a server would, record by record. */
+    var mockResponderForTesting: ((AgentBatchSyncRequest) -> AgentBatchSyncResponse)? = null
+
     /**
      * Executes the batch sync against FastAPI. Returns null when the server is unreachable
      * or rejects the request, so records stay pending and retry later (no fake "synced").
@@ -128,6 +131,7 @@ object NetworkClient {
     }
 
     suspend fun executeResilientBatchSync(request: AgentBatchSyncRequest): AgentBatchSyncResponse? {
+        mockResponderForTesting?.let { return it(request) }
         mockResponseForTesting?.let { return it }
         lastSyncRejection = null
 
