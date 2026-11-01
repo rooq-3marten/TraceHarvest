@@ -19,6 +19,24 @@ enum class NafdacExportCompliance(val label: String, val isApproved: Boolean) {
     UNREGISTERED_UNKNOWN("Unregistered • Lab Clearance Required", false)
 }
 
+/**
+ * The three risk words the admin dashboard understands.
+ * The app keeps the detailed NAFDAC state on the device; only this word is sent to the server.
+ */
+object DashboardRisk {
+    const val COMPLIANT = "COMPLIANT"
+    const val UNDER_REVIEW = "UNDER_REVIEW"
+    const val FLAGGED_HIGH_RISK = "FLAGGED_HIGH_RISK"
+
+    /** Turns a stored NAFDAC state name into a dashboard risk word. Unknown or blank means "not yet reviewed". */
+    fun from(storedRiskLevel: String): String = when (storedRiskLevel) {
+        NafdacExportCompliance.APPROVED_EXPORT_COMPLIANT.name,
+        NafdacExportCompliance.APPROVED_ORGANIC_PREMIUM.name -> COMPLIANT
+        NafdacExportCompliance.BANNED_MRL_VIOLATION.name -> FLAGGED_HIGH_RISK
+        else -> UNDER_REVIEW // restricted, unregistered, or anything we do not recognise
+    }
+}
+
 data class NafdacAgrochemical(
     val nafdacRegNo: String,
     val tradeName: String,
