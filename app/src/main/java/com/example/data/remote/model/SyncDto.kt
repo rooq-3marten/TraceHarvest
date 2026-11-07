@@ -100,8 +100,9 @@ data class BatchSyncDto(
     val aggregationGpsLng: Double? = null,
     @field:Json(name = "agent_id")
     val agentId: String = "",
-    @field:Json(name = "farmer_codes")
-    val farmerCodes: List<String> = emptyList(),
+    /** The farmers who contributed to this batch, by their on-device ID (what the server matches on). */
+    @field:Json(name = "farmer_ids")
+    val farmerIds: List<String> = emptyList(),
     @field:Json(name = "created_at_epoch_ms")
     val createdAtEpochMs: Long = System.currentTimeMillis()
 )
