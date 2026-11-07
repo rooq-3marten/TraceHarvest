@@ -413,8 +413,8 @@ fun TraceHarvestApp(
                                     onOpenFullSatelliteMap = { lat, lng, crop, name ->
                                         activeMapTarget = FarmMapTarget(lat, lng, crop, name)
                                     },
-                                    onRegisterFarmer = { name, phone, state, lga, comm, crop, size, unit, lat, lng, coop, isOffline ->
-                                        viewModel.registerFarmer(name, phone, state, lga, comm, crop, size, unit, lat, lng, coop, isOffline)
+                                    onRegisterFarmer = { enrollment, onResult ->
+                                        viewModel.registerFarmer(enrollment, onResult)
                                     }
                                 )
                             }
@@ -454,8 +454,8 @@ fun TraceHarvestApp(
                                 BatchCreationScreen(
                                     currentZone = currentZone,
                                     availableFarmers = farmers,
-                                    onCreateBatch = { code, crop, qty, grade, hub, farmerIds ->
-                                        viewModel.createConsignmentBatch(code, crop, qty, grade, hub, farmerIds)
+                                    onCreateBatch = { code, crop, qty, moisture, foreignMatter, hub, farmerIds ->
+                                        viewModel.createConsignmentBatch(code, crop, qty, moisture, foreignMatter, hub, farmerIds)
                                     },
                                     onNavigateBack = { viewModel.selectTab(AppTab.HOME_DASHBOARD) }
                                 )
