@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
 import com.example.data.catalog.DashboardRisk
 import com.example.data.remote.NetworkClient
+import com.example.data.remote.model.AgentBatchSyncRequest
 import com.example.data.remote.model.AgentBatchSyncResponse
 import com.example.data.repository.TraceHarvestRepository
 import kotlinx.coroutines.runBlocking
@@ -93,6 +94,34 @@ class SyncResultHandlingTest {
 
         assertTrue(second.isSuccess)
         assertEquals(0, dao.getPendingSyncPracticeLogs().size)
+    }
+
+    @Test
+    fun `a batch is sent with the IDs of the farmers behind it`() = runBlocking {
+        val withQueue = TraceHarvestRepository(db.traceHarvestDao(), db.pendingSyncDao(), signedInAgentId = { "TEST-AGENT-A" })
+        fun enrol(name: String, phone: String) = runBlocking {
+            withQueue.registerFarmer(
+                fullName = name, phoneNumber = phone, state = "Kano", lga = "L", community = "C",
+                crop = "Sesame", latitude = 12.0, longitude = 8.0, agentId = "TEST-AGENT-A", isOfflineMode = true
+            )
+        }
+        val one = enrol("Farmer One", "+2348030000031")
+        val two = enrol("Farmer Two", "+2348030000032")
+        withQueue.createHarvestBatch(
+            farmerCode = "MULTIPLE", farmerName = "Two farmers", crop = "Sesame", region = "Kano", bagCount = 2,
+            netWeightKg = 100.0, moisturePercent = 7.0, foreignMatterPercent = 0.5, agentId = "TEST-AGENT-A",
+            destinationMarket = "EU", batchCode = "NG-SES-TEST-1",
+            contributingFarmerCodes = listOf(one.farmerCode, two.farmerCode)
+        )
+
+        var sent: AgentBatchSyncRequest? = null
+        NetworkClient.mockResponderForTesting = { request ->
+            sent = request
+            FakeSyncServer.respond(request)
+        }
+        withQueue.syncAllPending()
+
+        assertEquals(setOf(one.clientUuid, two.clientUuid), sent!!.batches.single().farmerIds.toSet())
     }
 }
 
