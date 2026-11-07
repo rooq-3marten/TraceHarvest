@@ -17,7 +17,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import com.example.ui.screens.FarmerEnrollment
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 // Same statuses the DAO treats as "waiting to sync"
 private val PENDING_STATUSES = setOf("PENDING", "pending_sync", "FAILED")
@@ -75,6 +79,8 @@ class TraceHarvestViewModel @JvmOverloads constructor(
     val pendingPracticeSyncCount: StateFlow<Int>
     val totalPendingSyncCount: StateFlow<Int>
 
+    private val farmerSaveLock = Mutex()
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
@@ -99,7 +105,8 @@ class TraceHarvestViewModel @JvmOverloads constructor(
         batchCode: String,
         crop: String,
         quantityKg: Double,
-        qualityGrade: String,
+        moisturePercent: Double,
+        foreignMatterPercent: Double,
         hubName: String,
         contributingFarmerIds: List<String>
     ) {
@@ -122,12 +129,6 @@ class TraceHarvestViewModel @JvmOverloads constructor(
                     contributingFarmerIds.isNotEmpty() -> "${contributingFarmerIds.size} Smallholders"
                     else -> "Unlinked Consignment"
                 }
-                val (moisture, foreignMatter) = when {
-                    qualityGrade.startsWith("Grade B", ignoreCase = true) -> 9.2 to 1.2
-                    qualityGrade.startsWith("Grade C", ignoreCase = true) -> 11.2 to 2.0
-                    else -> 7.4 to 0.5
-                }
-
                 repository.createBatch(
                     farmerCode = primaryFarmerCode,
                     farmerName = farmerLabel,
@@ -135,8 +136,8 @@ class TraceHarvestViewModel @JvmOverloads constructor(
                     region = hubName,
                     bagCount = (quantityKg / 50.0).toInt().coerceAtLeast(1),
                     netWeightKg = quantityKg,
-                    moisturePercent = moisture,
-                    foreignMatterPercent = foreignMatter,
+                    moisturePercent = moisturePercent,
+                    foreignMatterPercent = foreignMatterPercent,
                     agentId = currentAgentId,
                     destinationMarket = "EU & Asia",
                     batchCode = batchCode,
@@ -285,50 +286,44 @@ class TraceHarvestViewModel @JvmOverloads constructor(
      * Crop type, Cooperative affiliation (if any).
      * If offline, stored locally in SQLite with status pending_sync.
      */
-    fun registerFarmer(
-        fullName: String,
-        phoneNumber: String,
-        state: String,
-        lga: String,
-        community: String,
-        crop: String,
-        farmSize: Double,
-        farmSizeUnit: String,
-        latitude: Double,
-        longitude: Double,
-        cooperative: String,
-        isOfflineMode: Boolean = true
-    ) {
+    fun registerFarmer(enrollment: FarmerEnrollment, onResult: (Boolean) -> Unit = {}) {
         if (currentAgentId.isBlank()) {
             _userMessage.value = SIGNED_OUT_MESSAGE
+            onResult(false)
             return
         }
         viewModelScope.launch {
-            try {
-                val farmer = repository.registerFarmer(
-                    fullName = fullName,
-                    phoneNumber = phoneNumber,
-                    state = state,
-                    lga = lga,
-                    community = community,
-                    crop = crop,
-                    farmSize = farmSize,
-                    farmSizeUnit = farmSizeUnit,
-                    latitude = latitude,
-                    longitude = longitude,
-                    cooperative = cooperative,
-                    agentId = currentAgentId,
-                    isOfflineMode = isOfflineMode
-                )
-                _selectedFarmerForLogging.value = farmer
-                if (isOfflineMode) {
-                    _userMessage.value = "Farmer ${farmer.fullName} stored locally in SQLite (status: pending_sync). Will sync upstream once connectivity returns."
-                } else {
-                    _userMessage.value = "Farmer ${farmer.fullName} enrolled with Backend Farmer ID: ${farmer.farmerCode}."
+            // One save at a time, so a quick second tap cannot race the first.
+            farmerSaveLock.withLock {
+                try {
+                    val farmer = repository.registerFarmer(
+                        fullName = enrollment.name,
+                        phoneNumber = enrollment.phone,
+                        state = enrollment.state,
+                        lga = enrollment.lga,
+                        community = enrollment.community,
+                        crop = enrollment.crop,
+                        farmSize = enrollment.farmSize,
+                        farmSizeUnit = enrollment.farmSizeUnit,
+                        latitude = enrollment.latitude,
+                        longitude = enrollment.longitude,
+                        cooperative = enrollment.cooperative,
+                        agentId = currentAgentId,
+                        gpsPolygon = enrollment.gpsPolygon,
+                        photoPath = enrollment.photoPath,
+                        photoConsent = enrollment.photoConsent,
+                        clientUuid = enrollment.clientUuid
+                    )
+                    _selectedFarmerForLogging.value = farmer
+                    _userMessage.value = "Farmer ${farmer.fullName} saved on this device. It will upload when you are online."
+                    _selectedTab.value = AppTab.REGISTER_FARMER
+                    onResult(true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _userMessage.value = "Enrollment failed: ${e.localizedMessage}"
+                    onResult(false)
                 }
-                _selectedTab.value = AppTab.REGISTER_FARMER
-            } catch (e: Exception) {
-                _userMessage.value = "Enrollment failed: ${e.localizedMessage}"
             }
         }
     }
