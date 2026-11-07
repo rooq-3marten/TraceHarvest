@@ -76,6 +76,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -185,7 +186,7 @@ fun LogPracticeScreen(
         return
     }
 
-    var selectedFarmerIndex by remember { mutableStateOf(0) }
+    var selectedFarmerIndex by rememberSaveable { mutableStateOf(0) }
     var farmerDropdownExpanded by remember { mutableStateOf(false) }
     var recentLogsExpanded by remember { mutableStateOf(false) }
 
@@ -246,13 +247,13 @@ fun LogPracticeScreen(
     var productDropdownExpanded by remember { mutableStateOf(false) }
 
     // Quantity used
-    var quantityValue by remember { mutableDoubleStateOf(1.0) }
-    var quantityUnit by remember { mutableStateOf("Litres") }
+    var quantityValue by rememberSaveable { mutableStateOf(1.0) }
+    var quantityUnit by rememberSaveable { mutableStateOf("Litres") }
     val quantityUnits = listOf("Litres", "Bags", "Sachets", "kg", "ml")
     var unitDropdownExpanded by remember { mutableStateOf(false) }
 
     // Exact calendar date (defaults to today)
-    var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var selectedDateMillis by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateMillis)
 
@@ -261,7 +262,7 @@ fun LogPracticeScreen(
     }
 
     // Optional photo of product label via Android Photo Picker
-    var labelPhotoUri by remember { mutableStateOf<String?>(null) }
+    var labelPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -271,9 +272,9 @@ fun LogPracticeScreen(
     }
 
     // Live auto-captured phone GPS
-    var liveLat by remember(currentFarmer.localId) { mutableDoubleStateOf(currentFarmer.latitude) }
-    var liveLng by remember(currentFarmer.localId) { mutableDoubleStateOf(currentFarmer.longitude) }
-    var gpsAcc by remember { mutableFloatStateOf(0.0f) }
+    var liveLat by rememberSaveable(currentFarmer.localId) { mutableStateOf(currentFarmer.latitude) }
+    var liveLng by rememberSaveable(currentFarmer.localId) { mutableStateOf(currentFarmer.longitude) }
+    var gpsAcc by rememberSaveable { mutableStateOf(0.0f) }
 
     var practiceLocationName by remember { mutableStateOf("") }
 

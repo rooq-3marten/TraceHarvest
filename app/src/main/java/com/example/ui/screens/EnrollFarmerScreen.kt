@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import java.util.UUID
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,31 +58,19 @@ fun EnrollFarmerScreen(
     onNavigateToSync: () -> Unit = {},
     onOpenGuide: () -> Unit = {},
     onOpenFullSatelliteMap: ((lat: Double, lng: Double, crop: String, name: String) -> Unit)? = null,
-    onRegisterFarmer: (
-        name: String,
-        phone: String,
-        state: String,
-        lga: String,
-        community: String,
-        crop: String,
-        farmSize: Double,
-        farmSizeUnit: String,
-        lat: Double,
-        lng: Double,
-        coop: String,
-        isOfflineMode: Boolean
-    ) -> Unit
+    /** Saves the farmer, then calls back with true when it is safely stored, or false when it is not. */
+    onRegisterFarmer: (FarmerEnrollment, onResult: (Boolean) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
     val zoneProfile = remember(zone) { ZoneRegistry.getProfile(zone) }
 
     // Form Field States
-    var fullName by remember { mutableStateOf("") }
-    var phoneNumber by remember { mutableStateOf("") }
-    var gender by remember { mutableStateOf("MALE") }
+    var fullName by rememberSaveable { mutableStateOf("") }
+    var phoneNumber by rememberSaveable { mutableStateOf("") }
+    var gender by rememberSaveable { mutableStateOf("MALE") }
 
     val stateOptions = remember(zone) { zoneProfile.states }
-    var selectedState by remember { mutableStateOf(stateOptions.first()) }
+    var selectedState by rememberSaveable { mutableStateOf(stateOptions.first()) }
     var stateMenuExpanded by remember { mutableStateOf(false) }
 
     val lgasByState = remember {
@@ -97,19 +87,19 @@ fun EnrollFarmerScreen(
         )
     }
 
-    var selectedLga by remember(selectedState) {
-        mutableStateOf(lgasByState[selectedState]?.firstOrNull() ?: "Central District")
+    var selectedLga by rememberSaveable(selectedState) {
+        mutableStateOf(lgasByState[selectedState]?.firstOrNull() ?: "") // blank means not chosen; nothing is invented
     }
     var lgaMenuExpanded by remember { mutableStateOf(false) }
-    var community by remember { mutableStateOf("") }
+    var community by rememberSaveable { mutableStateOf("") }
 
     // Crop Selection (Driven by Geopolitical Zone)
     val cropOptions = remember(zone) { zoneProfile.primaryCrops }
-    var selectedCrop by remember { mutableStateOf(cropOptions.first()) }
+    var selectedCrop by rememberSaveable { mutableStateOf(cropOptions.first()) }
     var cropMenuExpanded by remember { mutableStateOf(false) }
 
-    var farmSizeStr by remember { mutableStateOf("2.5") }
-    var selectedUnit by remember { mutableStateOf("hectares") }
+    var farmSizeStr by rememberSaveable { mutableStateOf("") } // the agent enters the real size
+    var selectedUnit by rememberSaveable { mutableStateOf("hectares") }
     var unitMenuExpanded by remember { mutableStateOf(false) }
 
     val commonCoops = remember(zoneProfile) {
@@ -119,20 +109,22 @@ fun EnrollFarmerScreen(
             "Independent Outgrower"
         )
     }
-    var selectedCooperative by remember { mutableStateOf(commonCoops.first()) }
+    var selectedCooperative by rememberSaveable { mutableStateOf(commonCoops.first()) }
     var coopMenuExpanded by remember { mutableStateOf(false) }
 
     // GPS & Satellite Boundary States
-    var latitude by remember { mutableDoubleStateOf(zoneProfile.aggregationHubs.first().latitude) }
-    var longitude by remember { mutableDoubleStateOf(zoneProfile.aggregationHubs.first().longitude) }
-    var gpsAccuracy by remember { mutableFloatStateOf(2.5f) }
-    var polygonVertices by remember { mutableStateOf<List<FarmVertex>>(emptyList()) }
-    var physicalLocationName by remember { mutableStateOf("${selectedLga} Farm Plot, ${selectedState}") }
+    var latitude by rememberSaveable { mutableStateOf(zoneProfile.aggregationHubs.first().latitude) }
+    var longitude by rememberSaveable { mutableStateOf(zoneProfile.aggregationHubs.first().longitude) }
+    // The starting point above is only where the map opens. It is saved only after the agent captures a real GPS fix.
+    var hasGpsFix by rememberSaveable { mutableStateOf(false) }
+    var gpsAccuracy by rememberSaveable { mutableStateOf(0f) }
+    var polygonVertices by rememberSaveable(stateSaver = FarmVertexListSaver) { mutableStateOf<List<FarmVertex>>(emptyList()) }
+    var physicalLocationName by rememberSaveable { mutableStateOf("${selectedLga} Farm Plot, ${selectedState}") }
 
     // Photo Capture & Ethical Consent States
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var photoUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var showConsentDialog by remember { mutableStateOf(false) }
-    var hasPhotoConsent by remember { mutableStateOf(false) }
+    var hasPhotoConsent by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -157,7 +149,8 @@ fun EnrollFarmerScreen(
         }
     }
 
-    var isOfflineMode by remember { mutableStateOf(true) }
+    // One ID per form: saving the same form twice stores one farmer. A new ID is made after each successful save.
+    var formId by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
@@ -444,6 +437,7 @@ fun EnrollFarmerScreen(
                             latitude = lat
                             longitude = lng
                             gpsAccuracy = acc
+                            hasGpsFix = true
                         },
                         onVertexCaptured = { vertex ->
                             polygonVertices = polygonVertices + vertex
@@ -587,25 +581,6 @@ fun EnrollFarmerScreen(
                     }
 
                     // Offline SQLite Storage Toggle
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(WarmOffWhiteBackground, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Offline SQLite Storage", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CharcoalBrownText)
-                            Text("Stored locally in pending queue. Safely uploaded when online.", fontSize = 10.sp, color = MutedBrownText)
-                        }
-                        Switch(
-                            checked = isOfflineMode,
-                            onCheckedChange = { isOfflineMode = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = ForestGreenSecondary)
-                        )
-                    }
-
                     // Error message
                     errorMessage?.let { err ->
                         Surface(
@@ -654,6 +629,15 @@ fun EnrollFarmerScreen(
                                 return@Button
                             }
 
+                            if (selectedLga.isBlank()) {
+                                errorMessage = "Please choose the farmer's LGA"
+                                return@Button
+                            }
+                            if (!hasGpsFix) {
+                                errorMessage = "Capture the farm's GPS location before saving"
+                                return@Button
+                            }
+
                             val cleanPhone = phoneNumber.trim().replace(" ", "").replace("-", "")
                             val isValidPhone = (cleanPhone.startsWith("+234") && cleanPhone.length in 13..14) ||
                                     (cleanPhone.startsWith("234") && cleanPhone.length in 12..13) ||
@@ -679,33 +663,46 @@ fun EnrollFarmerScreen(
                                 return@Button
                             }
 
-                            val cleanCommunity = if (community.isBlank()) "$selectedLga Farming Cluster" else community.trim()
+                            val cleanCommunity = community.trim() // blank means not recorded
                             val registeredName = fullName.trim()
 
                             isSaving = true
                             onRegisterFarmer(
-                                registeredName,
-                                cleanPhone,
-                                selectedState,
-                                selectedLga,
-                                cleanCommunity,
-                                selectedCrop,
-                                parsedSize,
-                                selectedUnit,
-                                latitude,
-                                longitude,
-                                selectedCooperative,
-                                isOfflineMode
-                            )
-
-                            // Clear inputs on success and show warm feedback
-                            fullName = ""
-                            phoneNumber = ""
-                            community = ""
-                            polygonVertices = emptyList()
-                            photoUri = null
-                            isSaving = false
-                            successMessage = "Farmer $registeredName registered offline and queued for synchronization!"
+                                FarmerEnrollment(
+                                    name = registeredName,
+                                    phone = cleanPhone,
+                                    state = selectedState,
+                                    lga = selectedLga,
+                                    community = cleanCommunity,
+                                    crop = selectedCrop,
+                                    farmSize = parsedSize,
+                                    farmSizeUnit = selectedUnit,
+                                    latitude = latitude,
+                                    longitude = longitude,
+                                    cooperative = selectedCooperative,
+                                    gpsPolygon = polygonVertices.toPolygonText(),
+                                    photoPath = photoUri?.takeIf { it.scheme == "file" }?.path,
+                                    photoConsent = hasPhotoConsent,
+                                    clientUuid = formId
+                                )
+                            ) { saved ->
+                                isSaving = false
+                                if (saved) {
+                                    // Clear the form only now that the farmer is safely stored.
+                                    fullName = ""
+                                    phoneNumber = ""
+                                    community = ""
+                                    farmSizeStr = ""
+                                    polygonVertices = emptyList()
+                                    photoUri = null
+                                    hasPhotoConsent = false
+                                    hasGpsFix = false
+                                    formId = UUID.randomUUID().toString()
+                                    successMessage = "Farmer $registeredName saved on this device. It will upload when you are online."
+                                } else {
+                                    errorMessage = "Could not save this farmer. Your entries are still here, so you can try again."
+                                }
+                            }
                         },
                         enabled = !isSaving,
                         modifier = Modifier

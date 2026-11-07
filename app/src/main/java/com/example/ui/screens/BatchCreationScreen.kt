@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,7 +41,8 @@ fun BatchCreationScreen(
         batchCode: String,
         crop: String,
         quantityKg: Double,
-        qualityGrade: String,
+        moisturePercent: Double,
+        foreignMatterPercent: Double,
         hubName: String,
         contributingFarmerIds: List<String>
     ) -> Unit,
@@ -49,19 +51,14 @@ fun BatchCreationScreen(
 ) {
     val zoneProfile = remember(currentZone) { ZoneRegistry.getProfile(currentZone) }
     var selectedCrop by remember { mutableStateOf(zoneProfile.primaryCrops.first()) }
-    var quantityStr by remember { mutableStateOf("2500") }
-    var selectedGrade by remember { mutableStateOf("Grade A Export Ready") }
+    var quantityStr by rememberSaveable { mutableStateOf("") }
+    var moistureStr by rememberSaveable { mutableStateOf("") }
+    var foreignMatterStr by rememberSaveable { mutableStateOf("") }
     var selectedHub by remember { mutableStateOf(zoneProfile.aggregationHubs.first().name) }
     var selectedFarmerIds by remember { mutableStateOf(setOf<String>()) }
     var isCreatedSuccess by remember { mutableStateOf(false) }
     var createdBatchCode by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val gradeOptions = listOf(
-        Pair("Grade A Export Ready", "Moisture < 8.0%, low foreign matter (< 1.0%)"),
-        Pair("Grade B Secondary Processing", "Moisture 8.1–10.0%, suitable for domestic food milling"),
-        Pair("Grade C Under-Conditioned", "Moisture > 10.0%, held for mechanical drying")
-    )
 
     Surface(
         modifier = modifier
@@ -258,7 +255,7 @@ fun BatchCreationScreen(
                     }
                 }
 
-                // Quality Grade Selection
+                // Quality readings, measured by the agent
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -270,34 +267,31 @@ fun BatchCreationScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text("2. Quality Grade Verification", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CharcoalBrownText)
-
-                            gradeOptions.forEach { (grade, desc) ->
-                                val isGradeSel = grade == selectedGrade
-                                Surface(
-                                    onClick = { selectedGrade = grade },
-                                    color = if (isGradeSel) ForestGreenContainer else Color.White,
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isGradeSel) ForestGreenSecondary else OutlineWarm),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        RadioButton(
-                                            selected = isGradeSel,
-                                            onClick = { selectedGrade = grade },
-                                            colors = RadioButtonDefaults.colors(selectedColor = ForestGreenSecondary)
-                                        )
-                                        Column {
-                                            Text(grade, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = CharcoalBrownText)
-                                            Text(desc, fontSize = 11.sp, color = MutedBrownText, lineHeight = 15.sp)
-                                        }
-                                    }
-                                }
-                            }
+                            Text("2. Quality Readings", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CharcoalBrownText)
+                            Text(
+                                "Enter what you measured for this consignment. The grade is worked out from these readings and the farmers' spray records.",
+                                fontSize = 11.sp, color = MutedBrownText, lineHeight = 15.sp
+                            )
+                            OutlinedTextField(
+                                value = moistureStr,
+                                onValueChange = { moistureStr = it },
+                                label = { Text("Moisture (%)") },
+                                placeholder = { Text("e.g. 7.5") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedTextField(
+                                value = foreignMatterStr,
+                                onValueChange = { foreignMatterStr = it },
+                                label = { Text("Foreign matter (%)") },
+                                placeholder = { Text("e.g. 0.8") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
                         }
                     }
                 }
@@ -382,15 +376,32 @@ fun BatchCreationScreen(
                                 errorMessage = "Please enter a valid consignment quantity"
                                 return@Button
                             }
-                            val stateCode = zoneProfile.states.first().take(3).uppercase()
-                            val code = "NG-${selectedCrop.take(3).uppercase()}-$stateCode-2026-${(1000..9999).random()}"
+                            val moisture = moistureStr.toDoubleOrNull()
+                            val foreignMatter = foreignMatterStr.toDoubleOrNull()
+                            if (moisture == null || moisture <= 0.0 || moisture > 100.0) {
+                                errorMessage = "Please enter the measured moisture, as a percentage"
+                                return@Button
+                            }
+                            if (foreignMatter == null || foreignMatter < 0.0 || foreignMatter > 100.0) {
+                                errorMessage = "Please enter the measured foreign matter, as a percentage"
+                                return@Button
+                            }
+                            errorMessage = null
+
+                            // Long random part: two batches must never share a code, or the server cannot accept both.
+                            val hubState = zoneProfile.aggregationHubs.firstOrNull { it.name == selectedHub }?.state
+                                ?: zoneProfile.states.first()
+                            val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                            val unique = java.util.UUID.randomUUID().toString().replace("-", "").take(6).uppercase()
+                            val code = "NG-${selectedCrop.take(3).uppercase()}-${hubState.take(3).uppercase()}-$year-$unique"
                             createdBatchCode = code
 
                             onCreateBatch(
                                 code,
                                 selectedCrop,
                                 qty,
-                                selectedGrade,
+                                moisture,
+                                foreignMatter,
                                 selectedHub,
                                 selectedFarmerIds.toList()
                             )
