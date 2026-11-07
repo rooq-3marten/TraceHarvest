@@ -19,9 +19,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.Locale
 import kotlin.random.Random
+
+/** Key under which a batch's farmer IDs are kept in its sync-queue entry. */
+private const val FARMER_IDS_KEY = "farmerIds"
+
+/** What the app puts in a batch's farmer code when several farmers contributed. */
+private const val MULTIPLE_FARMERS = "MULTIPLE"
 
 class TraceHarvestRepository(
     private val dao: TraceHarvestDao,
@@ -76,12 +84,23 @@ class TraceHarvestRepository(
         longitude: Double,
         cooperative: String,
         agentId: String,
-        isOfflineMode: Boolean
+        isOfflineMode: Boolean,
+        gpsPolygon: String,
+        photoPath: String?,
+        photoConsent: Boolean,
+        clientUuid: String?
     ): FarmerEntity = withContext(Dispatchers.IO) {
         val stampedAgentId = requireAgentId(agentId)
+
+        // The same form saved twice (a double tap, or a retry) returns the farmer already stored.
+        if (clientUuid != null) {
+            dao.getFarmerByLocalId(clientUuid)?.let { return@withContext it }
+        }
+
         val statePrefix = state.take(3).uppercase(Locale.ROOT)
         val randomDigits = Random.nextInt(1000, 9999)
-        val farmerCode = if (isOfflineMode) "TH-$statePrefix-PENDING-$randomDigits" else "TH-$statePrefix-2026-$randomDigits"
+        // The real farmer ID is issued by the server at sync. Until then this is only a placeholder.
+        val farmerCode = "TH-$statePrefix-PENDING-$randomDigits"
 
         val effectiveHectares = if (farmSizeHectares > 0.0) {
             farmSizeHectares
@@ -94,15 +113,8 @@ class TraceHarvestRepository(
         }
         val effectiveFarmSize = if (farmSize > 0.0) farmSize else effectiveHectares
 
-        val delta = (kotlin.math.sqrt(effectiveHectares.coerceAtLeast(0.5)) * 0.00075)
-        val polygonString = listOf(
-            "${latitude + delta},${longitude - delta}",
-            "${latitude + delta},${longitude + delta}",
-            "${latitude - delta},${longitude + delta}",
-            "${latitude - delta},${longitude - delta}"
-        ).joinToString(";")
-
         val farmer = FarmerEntity(
+            localId = clientUuid ?: java.util.UUID.randomUUID().toString(),
             farmerCode = farmerCode,
             fullName = fullName.trim(),
             phoneNumber = phoneNumber.trim(),
@@ -124,26 +136,32 @@ class TraceHarvestRepository(
             registrationTimestamp = System.currentTimeMillis(),
             createdAt = System.currentTimeMillis(),
             farmerDisplayId = farmerCode,
-            gpsPolygon = polygonString,
-            syncStatus = if (isOfflineMode) "PENDING" else "SYNCED",
-            isSynced = !isOfflineMode,
+            gpsPolygon = gpsPolygon.trim(),
+            photoPath = photoPath,
+            photoConsent = photoConsent && photoPath != null,
+            // Never marked synced here. Only the server's confirmation during sync does that.
+            syncStatus = "PENDING",
+            isSynced = false,
             agentId = stampedAgentId
         )
 
         dao.insertFarmer(farmer)
 
         // Queue in pending_syncs table for WorkManager offline synchronization
-        if (isOfflineMode) {
-            pendingSyncDao?.insert(
-                PendingSync(
-                    id = farmer.localId,
-                    entityType = "FARMER",
-                    entityId = farmer.localId,
-                    payload = """{"name":"${farmer.name}","phone":"${farmer.phone}","cropType":"${farmer.cropType}","agentId":"$stampedAgentId"}""",
-                    status = "PENDING"
-                )
+        pendingSyncDao?.insert(
+            PendingSync(
+                id = farmer.localId,
+                entityType = "FARMER",
+                entityId = farmer.localId,
+                payload = JSONObject()
+                    .put("name", farmer.name)
+                    .put("phone", farmer.phone)
+                    .put("cropType", farmer.cropType)
+                    .put("agentId", stampedAgentId)
+                    .toString(),
+                status = "PENDING"
             )
-        }
+        )
 
         farmer
     }
@@ -312,7 +330,7 @@ class TraceHarvestRepository(
                 farmSizeHectares = farmer.farmSizeHectares,
                 latitude = farmer.latitude,
                 longitude = farmer.longitude,
-                gpsPolygon = farmer.gpsPolygon,
+                gpsPolygon = farmer.gpsPolygon.ifBlank { null },
                 cooperativeName = farmer.cooperative,
                 agentId = farmer.agentId,
                 createdAtEpochMs = farmer.registrationTimestamp
@@ -351,7 +369,7 @@ class TraceHarvestRepository(
                 aggregationGpsLat = batch.aggregationGpsLat,
                 aggregationGpsLng = batch.aggregationGpsLng,
                 agentId = batch.agentId,
-                farmerCodes = if (batch.farmerCode.isNotBlank()) listOf(batch.farmerCode) else emptyList(),
+                farmerIds = contributingFarmerIds(batch),
                 createdAtEpochMs = batch.createdAt
             )
         }
@@ -445,6 +463,23 @@ class TraceHarvestRepository(
         )
     }
 
+    /**
+     * The on-device IDs of the farmers behind a batch. They are saved with the batch's sync-queue entry
+     * when the batch is made. An offline farmer's code changes once the server issues the real one, so a
+     * code cannot be trusted later; the ID does not change.
+     */
+    private suspend fun contributingFarmerIds(batch: HarvestBatchEntity): List<String> {
+        val saved = pendingSyncDao?.getPendingSyncById(batch.localId)?.payload
+        if (saved != null) {
+            val ids = runCatching { JSONObject(saved).optJSONArray(FARMER_IDS_KEY) }.getOrNull()
+            if (ids != null) return List(ids.length()) { ids.getString(it) }
+        }
+        // Batches made before this was recorded: use the single farmer code if it still matches.
+        val code = batch.farmerCode.trim()
+        if (code.isBlank() || code == MULTIPLE_FARMERS) return emptyList()
+        return listOfNotNull(dao.getFarmerByCode(code)?.clientUuid)
+    }
+
     /** Plain-language summary: how many were not saved and the most common reasons. */
     private fun syncMessage(serverMessage: String, notSavedReasons: List<String>): String {
         if (notSavedReasons.isEmpty()) return serverMessage
@@ -477,7 +512,7 @@ class TraceHarvestRepository(
 
         val lookupCodes = (contributingFarmerCodes + listOf(farmerCode))
             .map { it.trim() }
-            .filter { it.isNotBlank() && it != "MULTIPLE" }
+            .filter { it.isNotBlank() && it != MULTIPLE_FARMERS }
             .distinct()
 
         val logs = when {
@@ -494,6 +529,7 @@ class TraceHarvestRepository(
         } else {
             0
         }
+        val farmerIds = lookupCodes.mapNotNull { dao.getFarmerByCode(it)?.clientUuid }.distinct()
         val isPhiPassed = requiredPhi == 0 || daysSinceLastSpray >= requiredPhi
 
         val mrlStatus = when {
@@ -561,7 +597,13 @@ class TraceHarvestRepository(
                 id = batch.localId,
                 entityType = "BATCH",
                 entityId = batch.localId,
-                payload = """{"batchCode":"$resolvedBatchCode","crop":"$crop","netWeightKg":$netWeightKg,"agentId":"$stampedAgentId"}""",
+                payload = JSONObject()
+                    .put("batchCode", resolvedBatchCode)
+                    .put("crop", crop)
+                    .put("netWeightKg", netWeightKg)
+                    .put("agentId", stampedAgentId)
+                    .put(FARMER_IDS_KEY, JSONArray(farmerIds))
+                    .toString(),
                 status = "PENDING"
             )
         )

@@ -56,7 +56,15 @@ interface ITraceHarvestRepository {
         cooperative: String = "",
         /** The signed-in agent. Required: every record is stamped with it. */
         agentId: String,
-        isOfflineMode: Boolean = true
+        /** Kept so older callers compile. It changes nothing: every farmer is saved as pending and sent by sync. */
+        isOfflineMode: Boolean = true,
+        /** The boundary the agent walked, as "lat,lng;lat,lng". Blank when none was captured; nothing is invented. */
+        gpsPolygon: String = "",
+        /** Path of a photo file kept inside the app, or null. */
+        photoPath: String? = null,
+        photoConsent: Boolean = false,
+        /** Made once per form. Saving again with the same value returns the saved farmer, not a duplicate. */
+        clientUuid: String? = null
     ): FarmerEntity
 
     suspend fun logPractice(
