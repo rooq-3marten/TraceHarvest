@@ -69,7 +69,7 @@ class SmsEngine {
             else -> {
                 ProcessedInboundSms(
                     replyText = cleanText,
-                    automatedResponse = "TraceHarvest Gateway: Message received and logged to farmer code ${farmer?.farmerCode ?: "TH-GEN-001"}. Na gode!",
+                    automatedResponse = if (farmer != null) "TraceHarvest Gateway: Message received and logged to farmer code ${farmer.farmerCode}. Na gode!" else "TraceHarvest Gateway: Message received. No farmer record matches this number. Na gode!",
                     actionTaken = "GENERIC_LOGGED"
                 )
             }

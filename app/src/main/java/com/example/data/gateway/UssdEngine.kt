@@ -42,24 +42,27 @@ class UssdEngine {
 
             // Menu 3: My Farmer ID & Geotag
             hops[0] == "3" -> {
-                val farmerCode = currentFarmer?.farmerCode ?: "TH-KAN-2026-1048"
-                val coop = currentFarmer?.cooperative ?: "Dambatta Sesame Cluster"
-                val crop = currentFarmer?.crop ?: "Sesame"
-                val ha = currentFarmer?.farmSizeHectares ?: 3.5
-                val lat = currentFarmer?.latitude ?: 12.4358
-                val lng = currentFarmer?.longitude ?: 8.5147
-
-                UssdResponse(
-                    responseType = UssdResponseType.END,
-                    message = """
-                        END [Farmer Provenance ID]
-                        ID: $farmerCode
-                        Crop: $crop ($ha Hectares)
-                        Coop: $coop
-                        GPS: ${"%.4f".format(lat)}°N, ${"%.4f".format(lng)}°E
-                        Status: Geotag Verified & Active
-                    """.trimIndent()
-                )
+                if (currentFarmer == null) {
+                    UssdResponse(
+                        responseType = UssdResponseType.END,
+                        message = "END No farmer record matches this number."
+                    )
+                } else {
+                    val farmerCode = currentFarmer.farmerCode
+                    val idNote = if (farmerCode.contains("PENDING")) "Temporary ID, not yet issued by server" else "Server-issued ID"
+                    val gps = "%.4f, %.4f".format(currentFarmer.latitude, currentFarmer.longitude)
+                    UssdResponse(
+                        responseType = UssdResponseType.END,
+                        message = """
+                            END [Farmer Record]
+                            ID: $farmerCode
+                            $idNote
+                            Crop: ${currentFarmer.crop} (${currentFarmer.farmSizeHectares} Hectares)
+                            Coop: ${currentFarmer.cooperative.takeUnless { it.isNullOrBlank() } ?: "None recorded"}
+                            GPS: $gps
+                        """.trimIndent()
+                    )
+                }
             }
 
             // Menu 4: Export Price Premium
