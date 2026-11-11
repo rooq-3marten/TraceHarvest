@@ -69,14 +69,7 @@ class UssdEngine {
             hops[0] == "4" -> {
                 UssdResponse(
                     responseType = UssdResponseType.END,
-                    message = """
-                        END [TraceHarvest Premium]
-                        Traceable ${currentFarmer?.crop ?: "Sesame"} qualifies for export premium:
-                        Export Contract: ₦2,550,000/MT
-                        Local Spot Rate: ₦2,170,000/MT
-                        Est. Payout Bonus: +₦380,000/ton
-                        Zero MRL violations required.
-                    """.trimIndent()
+                    message = "END Export price information is not available on this service. Please ask your cooperative or field agent."
                 )
             }
 
