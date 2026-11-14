@@ -1,7 +1,19 @@
 package com.example.ui.components
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.SystemClock
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.example.core.location.GpsFix
+import com.example.core.location.GpsLockStatus
+import com.example.core.location.GpsLockTracker
+import kotlinx.coroutines.delay
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -32,6 +44,9 @@ import kotlin.math.*
 
 data class FarmVertex(val lat: Double, val lng: Double)
 
+private const val PIN_ACCURACY_M = 25f
+private const val BEST_FIX_AFTER_S = 30
+
 /**
  * Enterprise GPS Geotagging & Polygon Perimeter Walking Component.
  * Conforms to EUDR (EU Deforestation Regulation) and NAFDAC export origin standards.
@@ -47,52 +62,103 @@ fun AdvancedGpsPolygonCaptureCard(
     onLocationUpdated: (Double, Double, Float) -> Unit,
     onVertexCaptured: (FarmVertex) -> Unit,
     onResetPolygon: () -> Unit,
+    hasFix: Boolean = false,
+    formLockLabel: String? = null,
+    onFixCleared: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var isLiveTracking by remember { mutableStateOf(true) }
-    var isMockDetected by remember { mutableStateOf(false) }
+    // The tracker decides when a reading is good enough to lock. A saved lock survives rotation.
+    val tracker = remember {
+        GpsLockTracker().also {
+            if (hasFix && accuracyMeters > 0f) it.restoreLocked(GpsFix(currentLat, currentLng, accuracyMeters))
+        }
+    }
+    var version by remember { mutableStateOf(0) }   // bumped on every reading so the card redraws
+    var seconds by remember { mutableStateOf(0) }
+    var reportedLock by remember { mutableStateOf(hasFix) }
+    var providersOn by remember { mutableStateOf(true) }
+    var hasPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasPermission = granted
+    }
+    @Suppress("UNUSED_EXPRESSION") version   // read so changes redraw the card
+    val locked = tracker.locked != null
+    val formLocked = !locked && formLockLabel != null
 
-    // Start live continuous GPS listener
-    DisposableEffect(isLiveTracking) {
+    // Ask for permission as soon as the card appears.
+    LaunchedEffect(Unit) {
+        if (!hasPermission) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+    // Count seconds spent searching, so a weak fix can be accepted after a while.
+    LaunchedEffect(locked, hasPermission) {
+        while (!locked && hasPermission) {
+            delay(1000)
+            seconds++
+        }
+    }
+
+    // Start tracking automatically once permission is granted. No toggle: the card is always trying to lock.
+    DisposableEffect(hasPermission) {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         val listener = object : LocationListener {
             override fun onLocationChanged(loc: Location) {
-                val isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    loc.isMock
-                } else {
-                    @Suppress("DEPRECATION")
-                    loc.isFromMockProvider
+                val isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) loc.isMock
+                else @Suppress("DEPRECATION") loc.isFromMockProvider
+                val accepted = tracker.onFix(
+                    GpsFix(
+                        latitude = loc.latitude,
+                        longitude = loc.longitude,
+                        accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else 0f,
+                        isMock = isMock,
+                        isGpsProvider = loc.provider == LocationManager.GPS_PROVIDER,
+                        timeMs = SystemClock.elapsedRealtime()
+                    )
+                )
+                val l = tracker.locked
+                if (l != null && !reportedLock) {
+                    reportedLock = true
+                    onLocationUpdated(l.latitude, l.longitude, l.accuracyMeters)
                 }
-                isMockDetected = isMock
-                onLocationUpdated(loc.latitude, loc.longitude, loc.accuracy)
+                if (accepted || tracker.mockSeen) version++
             }
+            @Deprecated("Deprecated in Java")
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
+            override fun onProviderEnabled(provider: String) { providersOn = true }
+            override fun onProviderDisabled(provider: String) {
+                providersOn = lm?.let {
+                    it.isProviderEnabled(LocationManager.GPS_PROVIDER) || it.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                } ?: false
+            }
         }
 
-        if (isLiveTracking && lm != null) {
+        if (hasPermission && lm != null) {
             try {
-                // Adaptive interval: 2.5s on budget/low-RAM devices to prevent thermal throttling, 1.5s on standard
                 val isLowRam = com.example.core.resilience.DeviceHardeningManager.isLowRamDevice(context)
                 val updateIntervalMs = if (isLowRam) 2500L else 1500L
                 val minDistanceM = if (isLowRam) 1.5f else 1.0f
-
-                // Request updates from GPS provider first, falling back to network
+                var any = false
                 if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, updateIntervalMs, minDistanceM, listener)
+                    any = true
                 }
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                     lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, updateIntervalMs, minDistanceM, listener)
+                    any = true
                 }
-            } catch (_: SecurityException) {}
+                providersOn = any
+            } catch (_: SecurityException) {
+                hasPermission = false
+            } catch (_: Exception) {}
         }
 
         onDispose {
-            try {
-                lm?.removeUpdates(listener)
-            } catch (_: Exception) {}
+            try { lm?.removeUpdates(listener) } catch (_: Exception) {}
         }
     }
 
@@ -135,15 +201,21 @@ fun AdvancedGpsPolygonCaptureCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    val lockStatus = tracker.status
+                    val bestAcc = tracker.best?.accuracyMeters
                     val statusColor = when {
-                        accuracyMeters <= 3.0f -> Color(0xFF2E7D32) // High Precision Export Grade
-                        accuracyMeters <= 8.0f -> Color(0xFFF57F17) // Moderate Accuracy
-                        else -> Color(0xFFC62828)                   // Weak/Initial Fix
+                        lockStatus == GpsLockStatus.LOCKED -> Color(0xFF2E7D32)
+                        formLocked -> Color(0xFFF57F17)
+                        lockStatus == GpsLockStatus.WEAK_FIX -> Color(0xFFF57F17)
+                        else -> Color(0xFFC62828)
                     }
                     val statusText = when {
-                        accuracyMeters <= 3.0f -> "EXPORT GRADE (<3m)"
-                        accuracyMeters <= 8.0f -> "STANDARD (±${"%.1f".format(accuracyMeters)}m)"
-                        else -> "CALIBRATING SATELLITES"
+                        lockStatus == GpsLockStatus.LOCKED -> "GPS LOCKED (±${"%.0f".format(accuracyMeters)}m)"
+                        formLocked -> "LOCKED TO FORM LOCATION (no GPS)"
+                        !hasPermission -> "LOCATION PERMISSION NEEDED"
+                        !providersOn -> "DEVICE LOCATION IS OFF"
+                        lockStatus == GpsLockStatus.WEAK_FIX -> "WEAK SIGNAL (±${"%.0f".format(bestAcc ?: 0f)}m)"
+                        else -> "SEARCHING FOR SATELLITES (${seconds}s)"
                     }
 
                     Box(
@@ -157,28 +229,16 @@ fun AdvancedGpsPolygonCaptureCard(
                         fontWeight = FontWeight.Bold,
                         color = statusColor
                     )
-
-                    if (isMockDetected) {
-                        Text(
-                            text = "⚠ MOCK GPS",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD32F2F)
-                        )
-                    }
                 }
 
-                // Refresh / Fix Button (Keeps testTag for compatibility)
+                // Re-lock: clears the saved fix and searches again. Keeps the testTag used by tests.
                 OutlinedButton(
                     onClick = {
-                        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-                        try {
-                            val loc = lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                                ?: lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                            if (loc != null) {
-                                onLocationUpdated(loc.latitude, loc.longitude, loc.accuracy)
-                            }
-                        } catch (_: SecurityException) {}
+                        tracker.reset()
+                        reportedLock = false
+                        seconds = 0
+                        version++
+                        onFixCleared()
                     },
                     shape = RoundedCornerShape(6.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -188,8 +248,43 @@ fun AdvancedGpsPolygonCaptureCard(
                 ) {
                     Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(12.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Fix GPS", fontSize = 11.sp)
+                    Text(if (locked) "Re-lock" else "Restart", fontSize = 11.sp)
                 }
+            }
+
+            if (!hasPermission) {
+                Button(onClick = { permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Allow location to lock the farm position", fontSize = 12.sp)
+                }
+            } else if (!providersOn) {
+                Button(
+                    onClick = { try { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } catch (_: Exception) {} },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Turn on device location", fontSize = 12.sp) }
+            }
+            if (formLocked) {
+                Text(
+                    "Position taken from $formLockLabel as chosen in the form. It is not a GPS reading. A real GPS lock replaces it automatically when one is available.",
+                    fontSize = 10.sp, color = Color(0xFF8A5A00)
+                )
+            }
+            if (tracker.mockSeen) {
+                Text(
+                    "Fake-location app detected. Its readings are ignored. Turn it off to lock the position.",
+                    fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F)
+                )
+            }
+            if (!locked && tracker.status == GpsLockStatus.WEAK_FIX && seconds >= BEST_FIX_AFTER_S) {
+                OutlinedButton(
+                    onClick = {
+                        if (tracker.acceptBest()) {
+                            tracker.locked?.let { onLocationUpdated(it.latitude, it.longitude, it.accuracyMeters) }
+                            reportedLock = true
+                            version++
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Use best fix so far (±${"%.0f".format(tracker.best?.accuracyMeters ?: 0f)}m)", fontSize = 12.sp) }
             }
 
             // 2. Physical Cluster Location
@@ -221,7 +316,7 @@ fun AdvancedGpsPolygonCaptureCard(
             ) {
                 Column {
                     Text(
-                        text = "CENTER GEOTAG",
+                        text = if (locked) "CENTER GEOTAG (GPS LOCKED)" else if (formLocked) "FORM LOCATION (APPROXIMATE)" else "MAP START (NOT CAPTURED)",
                         fontSize = 9.sp,
                         color = Color.Gray,
                         fontWeight = FontWeight.Bold
@@ -242,10 +337,10 @@ fun AdvancedGpsPolygonCaptureCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "±${"%.1f".format(accuracyMeters)}m",
+                        text = if (locked) "±${"%.0f".format(accuracyMeters)}m" else if (formLocked) "area only" else "—",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2E7D32)
+                        color = if (locked) Color(0xFF2E7D32) else if (formLocked) Color(0xFFF57F17) else Color.Gray
                     )
                 }
             }
@@ -361,7 +456,7 @@ fun AdvancedGpsPolygonCaptureCard(
                             text = if (polygonVertices.isNotEmpty()) {
                                 "Walked Perimeter: ${polygonVertices.size}/4 corners"
                             } else {
-                                "Auto Perimeter Polygon (EUDR compliant)"
+                                "Perimeter not walked yet"
                             },
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -386,14 +481,17 @@ fun AdvancedGpsPolygonCaptureCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val liveFix = tracker.latest
+                val canPin = locked && liveFix != null && liveFix.accuracyMeters <= PIN_ACCURACY_M && polygonVertices.size < 4
                 OutlinedButton(
                     onClick = {
-                        if (polygonVertices.size < 4) {
-                            onVertexCaptured(FarmVertex(currentLat, currentLng))
+                        val f = tracker.latest
+                        if (f != null && polygonVertices.size < 4) {
+                            onVertexCaptured(FarmVertex(f.latitude, f.longitude))
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = polygonVertices.size < 4,
+                    enabled = canPin,
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(
@@ -403,7 +501,12 @@ fun AdvancedGpsPolygonCaptureCard(
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = if (polygonVertices.size < 4) "Pin Corner ${polygonVertices.size + 1}" else "Perimeter Complete",
+                        text = when {
+                            polygonVertices.size >= 4 -> "Perimeter Complete"
+                            !locked -> "Waiting for GPS lock"
+                            liveFix == null || liveFix.accuracyMeters > PIN_ACCURACY_M -> "Hold steady (±${"%.0f".format(liveFix?.accuracyMeters ?: 0f)}m)"
+                            else -> "Pin Corner ${polygonVertices.size + 1}"
+                        },
                         fontSize = 11.sp
                     )
                 }
