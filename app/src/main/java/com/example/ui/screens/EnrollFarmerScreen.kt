@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.saveable.rememberSaveable
 import java.util.UUID
 import androidx.compose.ui.Alignment
@@ -49,6 +50,8 @@ import kotlinx.coroutines.withContext
  * Zone-driven crops & LGAs, and ethical photo consent (zero AI stock faces).
  */
 @OptIn(ExperimentalMaterial3Api::class)
+private const val FORM_LOCATION_ACCURACY_M = 5000f
+
 @Composable
 fun EnrollFarmerScreen(
     enrolledFarmers: List<FarmerEntity>,
@@ -118,6 +121,9 @@ fun EnrollFarmerScreen(
     // The starting point above is only where the map opens. It is saved only after the agent captures a real GPS fix.
     var hasGpsFix by rememberSaveable { mutableStateOf(false) }
     var gpsAccuracy by rememberSaveable { mutableStateOf(0f) }
+    // "GPS" = real phone fix, "FORM" = position taken from the state/LGA/community chosen in the form, "" = none.
+    // A form-based position is saved with accuracy 5000 m so nobody mistakes it for a GPS reading.
+    var locationSource by rememberSaveable { mutableStateOf("") }
     var polygonVertices by rememberSaveable(stateSaver = FarmVertexListSaver) { mutableStateOf<List<FarmVertex>>(emptyList()) }
     var physicalLocationName by rememberSaveable { mutableStateOf("${selectedLga} Farm Plot, ${selectedState}") }
 
@@ -155,6 +161,36 @@ fun EnrollFarmerScreen(
     var successMessage by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var enrolledFarmersExpanded by remember { mutableStateOf(false) }
+
+    // Before a GPS lock, centre the map on the place named in the form (state, LGA, community).
+    // Silent when offline or when the place cannot be found; it never counts as a captured fix.
+    LaunchedEffect(selectedState, selectedLga, community, hasGpsFix) {
+        if (selectedLga.isNotBlank() && (!hasGpsFix || locationSource == "FORM")) {
+            delay(600)
+            GeoLocationNamingService.locateFormPlace(context, selectedState, selectedLga, community)?.let { (lat, lng) ->
+                if (!hasGpsFix || locationSource == "FORM") {
+                    latitude = lat
+                    longitude = lng
+                    gpsAccuracy = FORM_LOCATION_ACCURACY_M
+                    hasGpsFix = true
+                    locationSource = "FORM"
+                }
+            }
+        }
+    }
+
+    // After a lock, warn if the fix is in a different state from the one selected in the form.
+    var locationMismatch by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(hasGpsFix, latitude, longitude, selectedState, locationSource) {
+        locationMismatch = null
+        if (hasGpsFix && locationSource == "GPS") {
+            val found = GeoLocationNamingService.stateAt(context, latitude, longitude)
+            if (found != null && !found.contains(selectedState.replace(" State", ""), ignoreCase = true) &&
+                !selectedState.contains(found.replace(" State", ""), ignoreCase = true)) {
+                locationMismatch = "GPS places you in $found, but the form says $selectedState. Check the state and LGA."
+            }
+        }
+    }
 
     // Auto resolve physical location name
     LaunchedEffect(latitude, longitude, selectedState, selectedLga, community) {
@@ -433,11 +469,20 @@ fun EnrollFarmerScreen(
                         accuracyMeters = gpsAccuracy,
                         locationName = physicalLocationName,
                         polygonVertices = polygonVertices,
+                        hasFix = hasGpsFix && locationSource == "GPS",
+                        formLockLabel = if (hasGpsFix && locationSource == "FORM") listOf(community, selectedLga, selectedState).filter { it.isNotBlank() }.joinToString(", ") else null,
+                        onFixCleared = {
+                            hasGpsFix = false
+                            locationSource = ""
+                            gpsAccuracy = 0f
+                            polygonVertices = emptyList()
+                        },
                         onLocationUpdated = { lat, lng, acc ->
                             latitude = lat
                             longitude = lng
                             gpsAccuracy = acc
                             hasGpsFix = true
+                            locationSource = "GPS"
                         },
                         onVertexCaptured = { vertex ->
                             polygonVertices = polygonVertices + vertex
@@ -446,6 +491,10 @@ fun EnrollFarmerScreen(
                             polygonVertices = emptyList()
                         }
                     )
+
+                    locationMismatch?.let {
+                        Text(it, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB26A00))
+                    }
 
                     // Button to launch Fullscreen Satellite Perimeter Walk
                     if (onOpenFullSatelliteMap != null) {
@@ -634,7 +683,7 @@ fun EnrollFarmerScreen(
                                 return@Button
                             }
                             if (!hasGpsFix) {
-                                errorMessage = "Capture the farm's GPS location before saving"
+                                errorMessage = "Choose the state, LGA and village, or wait for the GPS lock, before saving"
                                 return@Button
                             }
 
@@ -697,6 +746,7 @@ fun EnrollFarmerScreen(
                                     photoUri = null
                                     hasPhotoConsent = false
                                     hasGpsFix = false
+                                    locationSource = ""
                                     formId = UUID.randomUUID().toString()
                                     successMessage = "Farmer $registeredName saved on this device. It will upload when you are online."
                                 } else {
