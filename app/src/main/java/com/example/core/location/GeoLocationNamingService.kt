@@ -187,4 +187,26 @@ object GeoLocationNamingService {
         val c = 2 * atan2(sqrt(a), sqrt(1 - a))
         return r * c
     }
+
+    /** Looks up the place named in the form. Returns null offline or when nothing is found. */
+    @Suppress("DEPRECATION")
+    suspend fun locateFormPlace(context: Context, state: String, lga: String, community: String): Pair<Double, Double>? =
+        withContext(Dispatchers.IO) {
+            try {
+                if (!Geocoder.isPresent()) return@withContext null
+                val query = listOf(community, lga, state, "Nigeria").filter { it.isNotBlank() }.joinToString(", ")
+                val a = Geocoder(context, Locale.getDefault()).getFromLocationName(query, 1)?.firstOrNull()
+                if (a != null && a.hasLatitude() && a.hasLongitude()) a.latitude to a.longitude else null
+            } catch (_: Exception) { null }
+        }
+
+    /** The state (admin area) at a coordinate, or null offline. */
+    @Suppress("DEPRECATION")
+    suspend fun stateAt(context: Context, lat: Double, lng: Double): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                if (!Geocoder.isPresent()) return@withContext null
+                Geocoder(context, Locale.getDefault()).getFromLocation(lat, lng, 1)?.firstOrNull()?.adminArea
+            } catch (_: Exception) { null }
+        }
 }
