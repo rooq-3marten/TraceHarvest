@@ -198,13 +198,17 @@ class TraceHarvestRepository(
         val (matchedAgro, compliance) = NafdacCatalog.validateApplication(productName, activeIngredient)
         val effectiveRegNo = if (nafdacRegNo.isNotBlank()) nafdacRegNo else (matchedAgro?.nafdacRegNo ?: "")
         val effectivePhiDays = if (phiDays > 0) phiDays else (matchedAgro?.preHarvestIntervalDays ?: 0)
-        val riskLevel = compliance.name
+        val isChemicalUse = productName.isNotBlank() || activeIngredient.isNotBlank()
+        val riskLevel = if (isChemicalUse) compliance.name else "NOT_APPLICABLE"
         val riskNotes = if (compliance == com.example.data.catalog.NafdacExportCompliance.BANNED_MRL_VIOLATION) {
             "CRITICAL VIOLATION: BANNED by NAFDAC • Fatal MRL rejection at export border."
+        } else if (!isChemicalUse) {
+            "No agrochemical used"
         } else {
             matchedAgro?.phiGuidelines ?: "Compliance evaluated"
         }
-        val isNafdacApproved = compliance.isApproved
+        // With no product recorded there is nothing to approve or reject.
+        val isNafdacApproved = !isChemicalUse || compliance.isApproved
 
         val log = PracticeLogEntity(
             farmerCode = farmerCode,
